@@ -143,13 +143,21 @@ class Herder:
             return
 
         kind = frame.get("t")
+        # ANY frame proves the host is alive, so a slots update doubles as a
+        # heartbeat and a quiet host is unambiguous.
         self.last_heartbeat = time.monotonic()
+        if kind == "hb":
+            return                      # liveness only; nothing to render
         if kind == "slots":
             incoming = frame.get("v")
             if isinstance(incoming, list):
                 self.slots = incoming[:SLOT_KEYS]
-                self.selected = next(
-                    (e.get("i") for e in self.slots if e.get("sel")), self.selected)
+                # A plain loop, not next(gen, default): CircuitPython's next()
+                # accepts no default argument and raises TypeError if given one.
+                for entry in self.slots:
+                    if entry.get("sel"):
+                        self.selected = entry.get("i")
+                        break
                 self._redraw()
         elif kind == "sel":
             self.selected = frame.get("i")
