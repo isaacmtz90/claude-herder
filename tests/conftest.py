@@ -2,6 +2,21 @@ import pytest
 from claude_herder.models import ConsoleKind, Session, SessionState
 
 
+@pytest.fixture(autouse=True)
+def isolate_config_dir(tmp_path, monkeypatch):
+    """Point CLAUDE_CONFIG_DIR at a temp dir for every test.
+
+    Without this, anything that persists state (the slot layout, the instance
+    lock) writes into the developer's real ~/.claude and leaves test fixture
+    data behind in their live config.
+    """
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    (tmp_path / "claude" / "herder").mkdir(parents=True, exist_ok=True)
+    yield
+
+
+
+
 @pytest.fixture
 def make_session():
     def _make(pid, *, sid=None, state=SessionState.IDLE, kind=ConsoleKind.INTERACTIVE,

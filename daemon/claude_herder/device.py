@@ -84,7 +84,10 @@ class Pad:
         if port is None:
             return False
         try:
-            self._serial = serial.Serial(port, self._baud, timeout=0, write_timeout=1)
+            # A generous write timeout: the pad can briefly stop draining while
+            # it redraws the OLED, and dropping the link over that causes a
+            # reconnect storm rather than a lost frame.
+            self._serial = serial.Serial(port, self._baud, timeout=0, write_timeout=3)
         except (OSError, serial.SerialException) as exc:
             log.warning("cannot open pad at %s: %s", port, exc)
             self._serial = None
@@ -113,6 +116,11 @@ class Pad:
         try:
             self._serial.write(protocol.encode(frame))
             return True
+        except serial.SerialTimeoutException:
+            # The pad was busy. Skip this frame; the next refresh resends state,
+            # so there is nothing to recover and no reason to tear down the link.
+            log.debug("pad write timed out; dropping one frame")
+            return False
         except (OSError, serial.SerialException) as exc:
             self._drop(str(exc))
             return False

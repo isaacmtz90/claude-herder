@@ -37,7 +37,8 @@ class Adapter(Protocol):
     def focus(self, tty: str) -> bool: ...
 
 
-def run_osascript(script: str, args: Sequence[str] = ()) -> tuple[bool, str]:
+def run_osascript(script: str, args: Sequence[str] = (),
+                  timeout: float = OSASCRIPT_TIMEOUT) -> tuple[bool, str]:
     """Run AppleScript, passing data as argv.
 
     Text is never interpolated into the script: that would be an injection hole
@@ -47,7 +48,7 @@ def run_osascript(script: str, args: Sequence[str] = ()) -> tuple[bool, str]:
         result = subprocess.run(
             ["osascript", "-", *[str(a) for a in args]],
             input=script, capture_output=True, text=True,
-            timeout=OSASCRIPT_TIMEOUT,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         # Usually a permission dialog waiting for a human.

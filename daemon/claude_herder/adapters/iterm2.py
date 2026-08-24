@@ -108,6 +108,10 @@ end run
 '''
 
 
+#: Discovery must finish well inside the pad's heartbeat window.
+DISCOVERY_TIMEOUT = 2.5
+
+
 class ITerm2Adapter:
     name = "iterm2"
 
@@ -124,7 +128,9 @@ class ITerm2Adapter:
         The title is how we pair a fleet attach console with the Claude session
         it is displaying -- see titles.py.
         """
-        ok, out = run_osascript(_LIST_SESSIONS)
+        # Kept short on purpose: this runs on the daemon's main loop, and a long
+        # stall here starves the pad's heartbeat and makes it flash "offline".
+        ok, out = run_osascript(_LIST_SESSIONS, timeout=DISCOVERY_TIMEOUT)
         if not ok:
             return {}
         found: dict[str, str] = {}
