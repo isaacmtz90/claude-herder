@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
@@ -48,13 +49,32 @@ def attach_journal_pids(directory: Path | None = None) -> frozenset[int]:
 
 
 
+#: After a failed title lookup, wait this long before trying again. Under
+#: launchd the daemon has a different TCC identity, so the first attempt can sit
+#: on an Automation consent dialog until osascript times out. Retrying every
+#: poll would stall the whole loop behind that dialog.
+TITLE_RETRY_SECONDS = 60.0
+_titles_blocked_until = 0.0
+
+
 def _default_titles() -> Mapping[str, str]:
     """Terminal titles, keyed by tty. Only iTerm2 can report these."""
+    global _titles_blocked_until
+    if time.monotonic() < _titles_blocked_until:
+        return {}
     try:
-        return ITerm2Adapter().session_titles()
+        titles_by_tty = ITerm2Adapter().session_titles()
     except Exception as exc:            # never let discovery kill the loop
         log.warning("cannot read terminal titles: %s", exc)
-        return {}
+        titles_by_tty = {}
+
+    if not titles_by_tty:
+        _titles_blocked_until = time.monotonic() + TITLE_RETRY_SECONDS
+        log.warning(
+            "no terminal titles available; fleet-attached consoles will show "
+            "'unknown' state. If macOS is asking to control iTerm2, approve it. "
+            "Retrying in %.0fs.", TITLE_RETRY_SECONDS)
+    return titles_by_tty
 
 
 #: Last-logged join set, so a stable pairing is announced once, not every poll.
@@ -111,6 +131,7 @@ def snapshot(
     journal_provider: Callable[[], Iterable[int]] = attach_journal_pids,
     cwd_provider: Callable[[Iterable[int]], Mapping[int, str]] = processes.cwds_for,
     title_provider: Callable[[], Mapping[str, str]] = _default_titles,
+    pinned: Mapping[str, int] | None = None,
 ) -> tuple[Slot, ...]:
     """Build the current slot assignment.
 
@@ -152,4 +173,4 @@ def snapshot(
         tty_by_pid, unmatched, cwd_provider(unmatched)
     )
 
-    return slots.assign(previous, enriched + attached, capacity)
+    return slots.assign(previous, enriched + attached, capacity, pinned=pinned)

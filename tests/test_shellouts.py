@@ -178,3 +178,18 @@ class TestGhosttyAdapter:
 
     def test_send_key_rejects_unknown_keys_before_stealing_focus(self):
         assert ghostty.GhosttyAdapter().send_key("/dev/ttys2", "hyperspace") is False
+
+    def test_frontmost_check_is_case_insensitive(self, monkeypatch):
+        # System Events reports the process as "ghostty" (lowercase) while the
+        # bundle is Ghostty.app. An exact comparison never matches, so focus
+        # would report failure even when it had worked.
+        monkeypatch.setattr(ghostty, "run_osascript", lambda *a, **k: (True, "ghostty"))
+        assert ghostty.ghostty_is_frontmost() is True
+
+    def test_frontmost_check_rejects_other_apps(self, monkeypatch):
+        monkeypatch.setattr(ghostty, "run_osascript", lambda *a, **k: (True, "iTerm2"))
+        assert ghostty.ghostty_is_frontmost() is False
+
+    def test_the_helper_app_is_discovered_in_the_repo(self):
+        # Scoping the Accessibility grant depends on finding this bundle.
+        assert ghostty.helper_app() is not None

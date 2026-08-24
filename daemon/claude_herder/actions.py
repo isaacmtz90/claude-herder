@@ -92,14 +92,20 @@ class Router:
             return VIEW_ONLY
 
         if key == APPROVE_KEY:
-            return self._text(session, self.config.approve_key, submit=False)
+            return self._answer(session, self.config.approve_key)
         if key == DENY_KEY:
-            return self._text(session, self.config.deny_key, submit=False)
+            return self._answer(session, self.config.deny_key)
         if key == INTERRUPT_KEY:
             return self._key(session, "escape")
         if key in CANNED_KEYS:
             return self._canned(CANNED_KEYS.index(key), session)
         return ""
+
+    def _answer(self, session: Session, answer: str) -> str:
+        """Send a permission answer, which may be a digit or a named key."""
+        if answer.startswith("@"):
+            return self._key(session, answer[1:])
+        return self._text(session, answer, submit=False)
 
     def _canned(self, index: int, session: Session) -> str:
         if index >= len(self.config.canned):

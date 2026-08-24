@@ -3,11 +3,21 @@
 # is a config edit rather than a code change.
 
 [permissions]
-# Digits sent to Claude Code's permission menu, with no Enter after them.
-# VERIFY THESE against your own CLI before trusting them: the menu order is
-# version-coupled, and answering the wrong option is not recoverable.
+# What to send to Claude Code's permission menu. A leading "@" means a key name
+# rather than literal text; a digit is typed with no Enter after it.
+#
+# Verified against CLI 2.1.241, where the dialog reads:
+#     Do you want to proceed?
+#     > 1. Yes
+#       2. No
+#     Esc to cancel
+#
+# "Yes" is always option 1, so approving by digit is safe. Denying by digit is
+# NOT: some tools show two options and others three, and in the three-option
+# form "2" is "Yes, and don't ask again" -- a fixed deny digit can therefore
+# permanently APPROVE what you meant to refuse. Escape cancels every shape.
 approve = "1"
-deny = "3"
+deny = "@escape"
 verified_against = "2.1.241"
 
 [timing]

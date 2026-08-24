@@ -121,6 +121,34 @@ send an Approve to the wrong session. Consoles that cannot be identified still
 appear and are still controllable; they just show `unknown` rather than a state
 invented for them.
 
+## Answering permission prompts
+
+Verified by triggering a real prompt on CLI **2.1.241**:
+
+```
+ Bash command
+   echo herder-probe-three
+ Permission rule Bash requires confirmation for this command.
+ Do you want to proceed?
+ > 1. Yes
+   2. No
+ Esc to cancel - Tab to amend - ctrl+e to explain
+```
+
+**Approve sends `1`** (no Enter). "Yes" is always the first option, so this is
+safe, and it was verified end to end: the dialog closed and the command ran.
+
+**Deny sends Escape, not a digit.** This matters more than it looks. Some tools
+show the two options above; others show three, with `2` being *"Yes, and don't
+ask again"*. A fixed deny digit would therefore **permanently approve** the
+exact thing you meant to refuse, on some prompts and not others. Escape cancels
+every shape of the dialog, and the dialog itself documents it. Also verified end
+to end: dialog dismissed, command not run.
+
+Both are configurable. A leading `@` in `approve`/`deny` means a key name rather
+than literal text, so `deny = "@escape"` is the shipped default and
+`deny = "2"` is available if you want to opt into digit-based denial.
+
 ## Known limits
 
 - **VS Code-hosted sessions are excluded.** They run on stdio with no
@@ -129,15 +157,20 @@ invented for them.
 - **Background jobs are watchable, not typeable.** There is no terminal to send
   input to. Their keys are dimmer, and the approve key is repurposed to open the
   job's output directory.
-- **The Ghostty adapter is written but unverified.** Ghostty was not installed
-  on the development machine. It is implemented to the documented technique —
-  OSC title tagging, then clicking the Window menu via System Events — and needs
-  Accessibility permission. iTerm2 is strictly better; prefer it.
+- **Ghostty works up to the Accessibility grant, which only you can give.**
+  Verified against Ghostty 1.3.1: the adapter correctly claims a Ghostty tty and
+  declines an iTerm2 one, OSC title tagging succeeds (that needs no permission),
+  and `focus()` fails cleanly with an actionable message rather than crashing.
+  The remaining step — clicking the tagged tab in Ghostty's Window menu — needs
+  **Accessibility**, which macOS will not let a script grant. Grant it to
+  `~/.claude/herder/ClaudeHerderHelper.app` and nothing else: that bundle exists
+  so the permission is scoped to this tool instead of to your Python
+  interpreter, which would otherwise inherit it for every script you ever run.
+  iTerm2 needs no Accessibility at all; prefer it where you have the choice.
 - **Setting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` for Ghostty costs
   fleet-attached consoles their state**, because that title is the join key.
-- **Permission menu digits are version-coupled.** `approve = "1"` / `deny = "3"`
-  is recorded in config as verified against CLI **2.1.241**. Check yours before
-  trusting them; answering the wrong option is not undoable.
+- **Permission answers are version-coupled**, and one of them is a trap. See
+  "Answering permission prompts" below.
 - **The registry is an internal file format.** Everything that reads it degrades
   to `unknown` rather than raising, but a future Claude Code could change it.
 

@@ -4,8 +4,24 @@ from claude_herder import config as C
 
 def test_missing_file_yields_usable_defaults(tmp_path):
     cfg = C.load(tmp_path / "absent.toml")
-    assert cfg.approve_key == "1" and cfg.deny_key == "3"
+    assert cfg.approve_key == "1"
     assert len(cfg.canned) == 3
+
+
+def test_deny_defaults_to_escape_not_a_digit(tmp_path):
+    """Verified against CLI 2.1.241: the dialog is
+
+        Do you want to proceed?
+        > 1. Yes
+          2. No
+
+    Two options for some tools, three for others. In the three-option form "2"
+    is "Yes, and don't ask again", so a fixed deny DIGIT can permanently approve
+    the thing you meant to refuse. Escape cancels every shape of the dialog.
+    """
+    cfg = C.load(tmp_path / "absent.toml")
+    assert cfg.deny_key == "@escape"
+    assert not cfg.deny_key.isdigit()
 
 
 def test_malformed_toml_falls_back_rather_than_crashing(tmp_path):

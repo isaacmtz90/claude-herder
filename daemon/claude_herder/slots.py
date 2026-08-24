@@ -11,7 +11,7 @@ Two properties matter more than cleverness here:
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .models import ConsoleKind, Session, Slot
 
@@ -48,12 +48,16 @@ def assign(
     previous: Iterable[Slot],
     sessions: Iterable[Session],
     capacity: int = DEFAULT_CAPACITY,
+    pinned: Mapping[str, int] | None = None,
 ) -> tuple[Slot, ...]:
     """Place sessions onto `capacity` slots, preserving existing positions.
 
-    Sessions already on the pad keep their index. Newcomers fill the lowest
-    free index, ordered by session id so the result never depends on the order
-    the registry happened to be read in.
+    Precedence, strongest first:
+
+    1. a session already on the pad keeps its key,
+    2. `pinned` (a layout remembered from a previous run) reclaims its key,
+    3. anything left fills the lowest free key, ordered by session id so the
+       result never depends on the order the registry happened to be read in.
     """
     pending = {s.session_id: s for s in herdable(sessions)}
 
@@ -64,6 +68,11 @@ def assign(
         existing = pending.pop(slot.session.session_id, None)
         if existing is not None:
             placed[slot.index] = existing  # refreshed state, same key
+
+    # Reclaim remembered keys before handing out fresh ones.
+    for session_id, index in sorted((pinned or {}).items()):
+        if session_id in pending and 0 <= index < capacity and index not in placed:
+            placed[index] = pending.pop(session_id)
 
     free = (i for i in range(capacity) if i not in placed)
     for session_id in sorted(pending):

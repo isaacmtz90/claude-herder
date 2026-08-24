@@ -34,10 +34,16 @@ class CannedKey:
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    #: Digits sent to Claude Code's permission menu. Version-coupled: verify
-    #: against your installed CLI before trusting these.
+    #: Answer sent to Claude Code's permission menu. A leading "@" means a key
+    #: name from adapters.KEY_CODES rather than literal text.
+    #:
+    #: "Yes" is always option 1, so approving by digit is safe. Denying by digit
+    #: is NOT: the dialog has two options for some tools and three for others,
+    #: and in the three-option form "2" is "Yes, and don't ask again" -- so a
+    #: fixed deny digit can permanently APPROVE the very thing you meant to
+    #: refuse. Escape cancels whatever shape the dialog has, so deny uses it.
     approve_key: str = "1"
-    deny_key: str = "3"
+    deny_key: str = "@escape"
     #: Verified against this CLI version; recorded so a mismatch is diagnosable.
     verified_against: str = "unverified"
 

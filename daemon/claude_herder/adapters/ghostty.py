@@ -22,7 +22,10 @@ our tag. The installer prints this; without it, targeting silently degrades to
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 import time
+from pathlib import Path
 
 from .base import KEY_CODES, run_osascript
 
@@ -105,6 +108,44 @@ end run
 '''
 
 
+#: Where the compiled helper may live: alongside an installed copy, or in the
+#: repo during development.
+HELPER_NAME = "ClaudeHerderHelper.app"
+
+
+def helper_app() -> Path | None:
+    """Locate the helper app that owns the Accessibility grant.
+
+    A TCC grant attaches to a binary, so granting Accessibility to the daemon's
+    interpreter would hand it to every Python program the user runs. The helper
+    exists so the grant can be scoped to this tool alone.
+    """
+    config = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
+    candidates = (
+        Path(config) / "herder" / HELPER_NAME,
+        Path(__file__).resolve().parents[3] / "helper" / HELPER_NAME,
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def frontmost_app() -> str:
+    """Which app is in front. Needs Automation consent, not Accessibility."""
+    ok, out = run_osascript(
+        'tell application "System Events" to get name of first process '
+        'whose frontmost is true')
+    return out if ok else ""
+
+
+def ghostty_is_frontmost() -> bool:
+    """Case-insensitive on purpose: System Events reports the process as
+    "ghostty" (lowercase) even though the bundle is Ghostty.app, so an exact
+    comparison silently never matches."""
+    return frontmost_app().strip().lower() == "ghostty"
+
+
 class GhosttyAdapter:
     """Focus-then-type. Correct where it works, fragile by construction."""
 
@@ -133,13 +174,43 @@ class GhosttyAdapter:
         time.sleep(TITLE_SETTLE)
         return tag
 
-    def focus(self, tty: str) -> bool:
+    def focus(self, tty: str, payload: str = "") -> bool:
+        """Raise the tab owning `tty`, optionally typing `payload` into it.
+
+        Prefers the helper app so the Accessibility grant stays scoped to this
+        tool. Falls back to inline AppleScript, which works only if the grant was
+        given to the interpreter instead.
+        """
         tag = self._tag(tty)
         if tag is None:
             return False
+
+        helper = helper_app()
+        if helper is not None:
+            args = ["open", "-a", str(helper), "--args", tag]
+            if payload:
+                args.append(payload)
+            try:
+                subprocess.run(args, timeout=10, check=False,
+                               capture_output=True)
+            except (OSError, subprocess.SubprocessError) as exc:
+                log.warning("helper app failed to launch: %s", exc)
+            else:
+                # The helper cannot return a value (it is launched, not called),
+                # so success is inferred from Ghostty coming to the front.
+                time.sleep(FOCUS_SETTLE + 0.3)
+                if ghostty_is_frontmost():
+                    return True
+                log.warning(
+                    "helper ran but Ghostty did not come forward. Grant "
+                    "Accessibility to %s, and check "
+                    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 is set.", helper)
+                return False
+
         ok, out = run_osascript(_RAISE_TAGGED_TAB, [tag])
         if not ok:
-            log.error("Ghostty focus failed; Accessibility permission is required")
+            log.error("Ghostty focus failed; Accessibility permission is required. "
+                      "Install the helper app to scope that grant.")
             return False
         if out == "notfound":
             log.warning("no Ghostty tab titled %r; is "
@@ -149,6 +220,15 @@ class GhosttyAdapter:
         return True
 
     def send_text(self, tty: str, text: str, submit: bool = False) -> bool:
+        # When the helper is in play it can raise and type in one step, which
+        # closes the window where focus could move between the two.
+        if helper_app() is not None:
+            if not self.focus(tty, payload=text):
+                return False
+            if submit:
+                time.sleep(0.5)
+                return self.send_key(tty, "enter")
+            return True
         if not self.focus(tty):
             return False
         ok, _ = run_osascript(_TYPE_FOCUSED, [text, "yes" if submit else "no"])

@@ -40,11 +40,25 @@ class TestPermissionKeys:
         r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
         assert adapter.texts == [("/dev/ttys1", "1", False)]
 
-    def test_deny_sends_its_own_digit(self, router, make_session):
+    def test_deny_defaults_to_escape_which_cancels_any_dialog_shape(
+            self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config(deny_key="3"))
+        r = router(adapter, Config())          # shipped default
         r.act(DENY_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.texts == [("/dev/ttys1", "3", False)]
+        assert adapter.keys == [("/dev/ttys1", "escape")]
+        assert adapter.texts == [], "deny must never type a digit by default"
+
+    def test_an_at_prefixed_answer_is_sent_as_a_key(self, router, make_session):
+        adapter = FakeAdapter()
+        r = router(adapter, Config(approve_key="@enter"))
+        r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
+        assert adapter.keys == [("/dev/ttys1", "enter")]
+
+    def test_a_digit_answer_is_still_sent_as_text(self, router, make_session):
+        adapter = FakeAdapter()
+        r = router(adapter, Config(deny_key="2"))   # opt in explicitly
+        r.act(DENY_KEY, make_session(1, tty="/dev/ttys1"))
+        assert adapter.texts == [("/dev/ttys1", "2", False)]
 
     def test_digits_come_from_config_not_hardcoded(self, router, make_session):
         adapter = FakeAdapter()

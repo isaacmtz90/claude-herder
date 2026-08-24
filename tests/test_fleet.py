@@ -34,6 +34,9 @@ def world(tmp_path):
 def snap(w, previous=(), capacity=6):
     return fleet.snapshot(
         previous, capacity,
+        # Inject an empty title provider: the default one shells out to
+        # osascript, which makes the suite depend on a live iTerm2.
+        title_provider=lambda: {},
         sessions_provider=lambda: fleet.registry.read_all(w["sessions_dir"]),
         probe_provider=lambda: w["probe"],
         tty_provider=lambda: w["ttys"],

@@ -13,6 +13,7 @@ from .actions import Router
 from .config import load as load_config
 from .device import Pad
 from .singleton import InstanceLock
+from .store import layout_of, load_layout, save_layout
 from .slots import DEFAULT_CAPACITY
 
 log = logging.getLogger("claude_herder")
@@ -28,6 +29,9 @@ class Herder:
         self.selected: int | None = None
         self.last_payload: list | None = None
         self.router = Router(config, dry_run=dry_run)
+        # Seed from the layout the last run left behind, so a restart does not
+        # reshuffle the keys the user has learned.
+        self._layout = load_layout()
         self._running = True
 
     def stop(self, *_):
@@ -40,10 +44,15 @@ class Herder:
         return None
 
     def refresh(self) -> None:
-        self.slots = fleet.snapshot(self.slots, SLOT_KEYS)
+        self.slots = fleet.snapshot(self.slots, SLOT_KEYS, pinned=self._layout)
         if self.selected is not None and self.selected_session() is None:
             # Selection pointed at a session that has gone away.
             self.selected = None
+        layout = layout_of(self.slots)
+        if layout and layout != self._layout:
+            self._layout = layout
+            save_layout(layout)
+
         payload = render.slots_payload(self.slots, self.selected)
         if payload != self.last_payload:
             if self.pad.send(protocol.slots_frame(payload)):
