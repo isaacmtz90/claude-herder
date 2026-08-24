@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-herder",
+  "owner": { "name": "Isaac Martinez" },
+  "plugins": [
+    {
+      "name": "claude-herder",
+      "source": "./",
+      "description": "MacroPad RP2040 fleet controller for Claude Code sessions.",
+      "category": "workflow",
+      "keywords": ["macropad", "hardware", "fleet"],
+      "strict": false
+    }
+  ]
+}

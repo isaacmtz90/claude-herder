@@ -1,0 +1,23 @@
+[project]
+name = "claude-herder"
+version = "0.1.0"
+description = "Adafruit MacroPad RP2040 as a Claude Code fleet controller"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5", "watchdog>=4.0"]
+
+[project.scripts]
+claude-herder = "claude_herder.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "daemon"}
+
+[tool.setuptools.packages.find]
+where = ["daemon"]
+
+[tool.pytest.ini_options]
+pythonpath = ["daemon"]
+testpaths = ["tests"]

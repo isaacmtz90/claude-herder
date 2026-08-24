@@ -1,0 +1,8 @@
+{
+  "name": "claude-herder",
+  "version": "0.1.0",
+  "description": "Drive a fleet of Claude Code sessions from an Adafruit MacroPad RP2040: six keys mirror six sessions, their LEDs show thinking/idle/waiting, and the bottom rows approve, deny, interrupt and navigate whichever session is selected.",
+  "author": { "name": "Isaac Martinez" },
+  "license": "MIT",
+  "keywords": ["claude-code", "macropad", "hardware", "circuitpython", "rp2040", "fleet", "sessions"]
+}

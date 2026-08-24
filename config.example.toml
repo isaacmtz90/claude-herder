@@ -1,0 +1,39 @@
+# Claude Herder configuration.
+# Everything version-coupled lives here, so a change to Claude Code's prompt UI
+# is a config edit rather than a code change.
+
+[permissions]
+# Digits sent to Claude Code's permission menu, with no Enter after them.
+# VERIFY THESE against your own CLI before trusting them: the menu order is
+# version-coupled, and answering the wrong option is not recoverable.
+approve = "1"
+deny = "3"
+verified_against = "2.1.241"
+
+[timing]
+poll_interval = 1.0
+heartbeat_interval = 1.0
+# Gap between typing text and pressing Enter. Claude Code's TUI reads an Enter
+# arriving in the same input batch as a newline rather than a submit.
+submit_delay = 0.5
+
+# Keys 9, 10 and 11, in order. submit = false types the text and leaves it for
+# you to send, which is safer for anything destructive.
+# Two built-ins are accepted instead of literal text:
+#   "@focus"  raise this session's terminal window
+#   "@output" open a background job's output directory
+
+[[canned]]
+label = "plan mode"
+text = "\u001b[Z"          # Shift-Tab, toggles plan / auto-accept
+submit = false
+
+[[canned]]
+label = "compact"
+text = "/compact"
+submit = true
+
+[[canned]]
+label = "clear"
+text = "/clear"
+submit = false            # deliberately not auto-submitted
