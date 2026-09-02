@@ -153,6 +153,17 @@ class Herder:
             self.pad.send(protocol.toast_frame("no session selected"))
             return
         live = bool((self.last_context or {}).get("live"))
+        if live:
+            # The frame the user acted on may be a second old, and arrows are
+            # relative: if the dialog's cursor moved, a stale position answers
+            # the wrong row. Recompute from the label against a fresh read.
+            fresh = tuple(self.options_provider(session))
+            if label not in fresh:
+                log.warning("option %r is gone; refusing to answer", label)
+                self.pad.send(protocol.toast_frame("prompt changed"))
+                self.last_context = None
+                return
+            index = fresh.index(label)
         message = self.router.perform(session, index, label, live,
                                       current=self.cursor_hint)
         log.info("picked %r on %s -> %s", label, session.label, message)

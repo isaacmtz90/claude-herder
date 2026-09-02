@@ -200,3 +200,48 @@ class TestTapFocusesTheTerminal:
         h.router.focus = lambda s: focused.append(s) or True
         h.on_key(0)
         assert focused == []
+
+
+class TestPickIsResolvedAgainstAFreshRead:
+    """The frame the user acted on may be a second old, and the dialog's cursor
+    can have moved. Arrows are relative, so a stale cursor answers the wrong
+    row. The pad sends the chosen LABEL, so the position is recomputed at pick
+    time against a fresh read of the dialog."""
+
+    def _blocked(self, herder, make_session, options, cursor):
+        from claude_herder.models import SessionState
+        h, pad = herder([make_session(1, tty="/dev/ttys1", state=SessionState.WAITING)])
+        h.options_provider = lambda s: options
+        h.refresh(); h.on_key(0); h.refresh()
+        h.cursor_hint = cursor
+        return h, pad
+
+    def test_the_index_is_recomputed_from_the_label(self, herder, make_session):
+        h, _ = self._blocked(herder, make_session, ["Yes", "No"], 0)
+        # The dialog has since gained a middle option, so "No" moved 1 -> 2.
+        h.options_provider = lambda s: ["Yes", "Yes, and don't ask again", "No"]
+        seen = []
+        h.router.perform = (lambda s, index, label, live, current=None:
+                            seen.append(index) or "ok")
+        h.on_pick(1, "No")
+        assert seen == [2], "the label, not the stale position, decides"
+
+    def test_a_vanished_option_is_refused(self, herder, make_session):
+        h, pad = self._blocked(herder, make_session, ["Yes", "No"], 0)
+        h.options_provider = lambda s: []          # dialog already answered
+        called = []
+        h.router.perform = (lambda s, index, label, live, current=None:
+                            called.append(True) or "ok")
+        h.on_pick(1, "No")
+        assert called == [], "never act on a prompt that is no longer there"
+        assert any("changed" in f.get("m", "").lower() or "gone" in f.get("m", "").lower()
+                   for f in pad.frames_of("toast"))
+
+    def test_a_menu_action_needs_no_rescrape(self, herder, make_session):
+        h, _ = herder([make_session(1, tty="/dev/ttys1")])
+        h.refresh(); h.on_key(0); h.refresh()
+        scrapes = []
+        h.options_provider = lambda s: scrapes.append(True) or []
+        h.router.perform = lambda s, index, label, live, current=None: "ok"
+        h.on_pick(0, "Focus")
+        assert scrapes == [], "only live prompts need re-reading"
