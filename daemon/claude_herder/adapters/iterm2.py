@@ -85,6 +85,22 @@ on run argv
 end run
 '''
 
+_PANE_TEXT = '''
+on run argv
+  set targetTty to item 1 of argv
+  tell application "iTerm2"
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with s in sessions of t
+          if (tty of s) is targetTty then return contents of s
+        end repeat
+      end repeat
+    end repeat
+  end tell
+  return ""
+end run
+'''
+
 _FOCUS = '''
 on run argv
   set targetTty to item 1 of argv
@@ -163,6 +179,15 @@ class ITerm2Adapter:
             return False
         ok, out = run_osascript(_WRITE_CODES, [tty, *codes])
         return ok and out != "notfound"
+
+    def pane_text(self, tty: str) -> str:
+        """Visible text of a session, for reading a dialog off the screen.
+
+        Plain text only: AppleScript returns no ANSI, so anything conveyed
+        purely by colour is invisible here.
+        """
+        ok, out = run_osascript(_PANE_TEXT, [tty], timeout=DISCOVERY_TIMEOUT)
+        return out if ok else ""
 
     def focus(self, tty: str) -> bool:
         ok, out = run_osascript(_FOCUS, [tty])

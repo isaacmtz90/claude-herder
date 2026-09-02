@@ -8,7 +8,7 @@ import signal
 import sys
 import time
 
-from . import fleet, protocol, render
+from . import context, fleet, prompts, protocol, render, summaries
 from .actions import Router
 from .config import load as load_config
 from .device import Pad
@@ -28,7 +28,11 @@ class Herder:
         self.slots: tuple = ()
         self.selected: int | None = None
         self.last_payload: list | None = None
+        self.last_context: dict | None = None
         self.router = Router(config, dry_run=dry_run)
+        # Injected so the option and summary sources can be swapped in tests.
+        self.options_provider = self._read_options
+        self.summary_provider = summaries.summarise
         # Seed from the layout the last run left behind, so a restart does not
         # reshuffle the keys the user has learned.
         self._layout = load_layout()
@@ -36,6 +40,16 @@ class Herder:
 
     def stop(self, *_):
         self._running = False
+
+    def _read_options(self, session) -> tuple[str, ...]:
+        """Read a blocked session's choices off its terminal.
+
+        Only ever called for a session already reported as waiting, so the
+        scrape is rare rather than per-poll.
+        """
+        if session.terminal != "iterm2" or not session.tty:
+            return ()
+        return prompts.parse_options(self.router._iterm.pane_text(session.tty))
 
     def selected_session(self):
         for slot in self.slots:
@@ -58,6 +72,27 @@ class Herder:
             if self.pad.send(protocol.slots_frame(payload)):
                 self.last_payload = payload
             log.debug("slots: %s", payload)
+        self.push_context()
+
+    def push_context(self) -> None:
+        """Send the selected session's detail, when it has changed."""
+        session = self.selected_session()
+        if session is None:
+            if self.last_context is not None:
+                self.last_context = None
+            return
+        frame = context.build(
+            session,
+            options_provider=self.options_provider,
+            summary_provider=self.summary_provider,
+            now_ms=int(time.time() * 1000),
+            # Stable while a session stays in one state, so the word does not
+            # flicker; different per session and per episode, so it varies.
+            seed=abs(hash(session.session_id)) + session.status_updated_at // 1000,
+        )
+        if frame != self.last_context:
+            if self.pad.send(frame):
+                self.last_context = frame
 
     def on_frame(self, frame: dict) -> None:
         kind = frame.get("t")
@@ -66,10 +101,12 @@ class Herder:
             self.last_payload = None          # force a full repaint
         elif kind == "key":
             self.on_key(int(frame.get("k", -1)))
-        elif kind == "enc":
-            self.router.scroll(self.selected_session(), int(frame.get("d", 0)))
-        elif kind == "encbtn":
-            self.router.select_option(self.selected_session())
+        elif kind == "pick":
+            self.on_pick(int(frame.get("i", -1)), str(frame.get("l", "")))
+        elif kind in ("enc", "encbtn"):
+            # The pad drives its own cursor so the dial feels instant; these are
+            # informational only.
+            log.debug("encoder: %s", frame)
 
     def on_key(self, key: int) -> None:
         if 0 <= key < SLOT_KEYS:
@@ -77,15 +114,26 @@ class Herder:
             session = self.selected_session()
             log.info("selected slot %d: %s", key, session.label if session else "(empty)")
             self.last_payload = None          # selection changed; repaint
+            # Raising the window makes the pad and the screen agree on what you
+            # are looking at. Skipped for anything without a window to raise.
+            if self.config.focus_on_tap and session is not None and session.controllable:
+                self.router.focus(session)
             return
 
+        log.debug("key %d is not a slot", key)
+
+    def on_pick(self, index: int, label: str) -> None:
         session = self.selected_session()
         if session is None:
             self.pad.send(protocol.toast_frame("no session selected"))
             return
-        message = self.router.act(key, session)
+        live = bool((self.last_context or {}).get("live"))
+        message = self.router.perform(session, index, label, live)
+        log.info("picked %r on %s -> %s", label, session.label, message)
         if message:
             self.pad.send(protocol.toast_frame(message))
+        # State will have moved on; force a fresh detail frame.
+        self.last_context = None
 
     def run(self) -> int:
         next_refresh = 0.0

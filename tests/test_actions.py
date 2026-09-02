@@ -1,6 +1,6 @@
 """Key -> action dispatch. The safety-critical part of the daemon."""
 import pytest
-from claude_herder.actions import Router, APPROVE_KEY, DENY_KEY, INTERRUPT_KEY, CANNED_KEYS
+from claude_herder.actions import Router
 from claude_herder.config import CannedKey, Config
 from claude_herder.models import ConsoleKind, SessionState
 
@@ -33,139 +33,97 @@ def router():
     return _make
 
 
-class TestPermissionKeys:
-    def test_approve_sends_the_configured_digit_without_submitting(self, router, make_session):
+class TestPickingALivePromptOption:
+    """A blocked session's options come from the prompt itself, and the pad
+    sends back the index the user landed on."""
+
+    def test_the_first_option_sends_the_digit_one(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config(approve_key="1"))
-        r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=0, label="Yes", live=True)
         assert adapter.texts == [("/dev/ttys1", "1", False)]
 
-    def test_deny_defaults_to_escape_which_cancels_any_dialog_shape(
-            self, router, make_session):
+    def test_the_third_option_sends_the_digit_three(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config())          # shipped default
-        r.act(DENY_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.keys == [("/dev/ttys1", "escape")]
-        assert adapter.texts == [], "deny must never type a digit by default"
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=2, label="No", live=True)
+        assert adapter.texts == [("/dev/ttys1", "3", False)]
 
-    def test_an_at_prefixed_answer_is_sent_as_a_key(self, router, make_session):
+    def test_no_newline_is_appended(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config(approve_key="@enter"))
-        r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.keys == [("/dev/ttys1", "enter")]
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=0, label="Yes", live=True)
+        assert adapter.texts[0][2] is False
 
-    def test_a_digit_answer_is_still_sent_as_text(self, router, make_session):
+    def test_an_out_of_range_index_is_refused(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config(deny_key="2"))   # opt in explicitly
-        r.act(DENY_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.texts == [("/dev/ttys1", "2", False)]
+        message = router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                          index=99, label="?", live=True)
+        assert adapter.texts == [] and "range" in message.lower()
 
-    def test_digits_come_from_config_not_hardcoded(self, router, make_session):
+
+class TestPickingAMenuAction:
+    """When nothing is blocking, the dial offers our own actions."""
+
+    def test_focus_raises_the_window(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter, Config(approve_key="y"))
-        r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.texts[0][1] == "y"
-
-
-class TestInterruptAndNavigation:
-    def test_interrupt_sends_escape_as_a_key_not_text(self, router, make_session):
-        adapter = FakeAdapter()
-        router(adapter).act(INTERRUPT_KEY, make_session(1, tty="/dev/ttys1"))
-        assert adapter.keys == [("/dev/ttys1", "escape")]
-
-    def test_encoder_scrolls_with_arrow_keys(self, router, make_session):
-        adapter = FakeAdapter()
-        r = router(adapter)
-        session = make_session(1, tty="/dev/ttys1")
-        r.scroll(session, -1)
-        r.scroll(session, 2)
-        assert [k for _, k in adapter.keys] == ["up", "down", "down"]
-
-    def test_zero_delta_does_nothing(self, router, make_session):
-        adapter = FakeAdapter()
-        router(adapter).scroll(make_session(1, tty="/dev/ttys1"), 0)
-        assert adapter.keys == []
-
-    def test_encoder_press_selects_with_enter(self, router, make_session):
-        adapter = FakeAdapter()
-        router(adapter).select_option(make_session(1, tty="/dev/ttys1"))
-        assert adapter.keys == [("/dev/ttys1", "enter")]
-
-
-class TestCannedKeys:
-    def test_submitting_sends_text_then_enter_separately(self, router, make_session):
-        # Deliberate: Claude Code's TUI reads an Enter arriving in the same input
-        # batch as a newline rather than a submit, so text and Enter are sent as
-        # two operations with a gap between them.
-        adapter = FakeAdapter()
-        config = Config(canned=(CannedKey("compact", "/compact", submit=True),),
-                        submit_delay=0.0)
-        router(adapter, config).act(CANNED_KEYS[0], make_session(1, tty="/dev/ttys1"))
-        assert adapter.texts == [("/dev/ttys1", "/compact", False)]
-        assert adapter.keys == [("/dev/ttys1", "enter")]
-
-    def test_a_non_submitting_key_never_presses_enter(self, router, make_session):
-        adapter = FakeAdapter()
-        config = Config(canned=(CannedKey("plan", "\x1b[Z", submit=False),))
-        router(adapter, config).act(CANNED_KEYS[0], make_session(1, tty="/dev/ttys1"))
-        assert adapter.keys == []
-
-    def test_an_unconfigured_canned_key_does_nothing(self, router, make_session):
-        adapter = FakeAdapter()
-        config = Config(canned=(CannedKey("only one", "x"),))
-        router(adapter, config).act(CANNED_KEYS[2], make_session(1, tty="/dev/ttys1"))
-        assert adapter.texts == []
-
-    def test_focus_is_available_as_a_builtin_binding(self, router, make_session):
-        adapter = FakeAdapter()
-        config = Config(canned=(CannedKey("focus", "@focus"),))
-        router(adapter, config).act(CANNED_KEYS[0], make_session(1, tty="/dev/ttys1"))
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=0, label="Focus", live=False)
         assert adapter.focused == ["/dev/ttys1"]
-        assert adapter.texts == []
 
-
-class TestBackgroundJobsAreNeverTypedInto:
-    """A background session has no terminal. Every keystroke path must refuse
-    rather than send input somewhere unintended."""
-
-    def bg(self, make_session):
-        return make_session(1, kind=ConsoleKind.BGJOB, job_id="abc", tty=None)
-
-    @pytest.mark.parametrize("key", [DENY_KEY, INTERRUPT_KEY] + list(CANNED_KEYS))
-    def test_control_keys_send_nothing_and_say_why(self, router, make_session, key):
+    def test_interrupt_sends_escape(self, router, make_session):
         adapter = FakeAdapter()
-        message = router(adapter).act(key, self.bg(make_session))
-        assert adapter.texts == [] and adapter.keys == []
-        assert message and "view only" in message.lower()
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=1, label="Interrupt", live=False)
+        assert adapter.keys == [("/dev/ttys1", "escape")]
 
-    def test_the_approve_key_becomes_open_output_for_a_background_job(
-            self, router, make_session):
-        # Approving is meaningless without a terminal, so the leftmost action key
-        # is repurposed to the one thing that is useful: showing the job output.
+    def test_a_slash_command_is_typed_but_not_submitted(self, router, make_session):
         adapter = FakeAdapter()
-        message = router(adapter).act(APPROVE_KEY, self.bg(make_session))
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=2, label="/compact", live=False)
+        assert adapter.texts == [("/dev/ttys1", "/compact", False)]
+        assert adapter.keys == [], "destructive-ish commands wait for a human Enter"
+
+    def test_open_output_needs_no_terminal(self, router, make_session):
+        from claude_herder.models import ConsoleKind
+        adapter = FakeAdapter()
+        bg = make_session(1, kind=ConsoleKind.BGJOB, job_id="j", tty=None)
+        message = router(adapter).perform(bg, index=0, label="Open output", live=False)
         assert adapter.texts == [] and adapter.keys == []
         assert "output" in message.lower()
 
-    def test_encoder_sends_nothing(self, router, make_session):
+    def test_an_unknown_label_does_nothing(self, router, make_session):
         adapter = FakeAdapter()
-        r = router(adapter)
-        r.scroll(self.bg(make_session), 1)
-        r.select_option(self.bg(make_session))
-        assert adapter.keys == []
+        message = router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                          index=0, label="Frobnicate", live=False)
+        assert adapter.texts == [] and adapter.keys == []
+        assert message
 
-    def test_a_session_with_no_tty_is_never_typed_into(self, router, make_session):
+
+class TestUnreachableSessionsAreNeverTypedInto:
+    def test_a_windowless_session_refuses_every_live_option(
+            self, router, make_session):
+        from claude_herder.models import ConsoleKind
         adapter = FakeAdapter()
-        orphan = make_session(1, kind=ConsoleKind.INTERACTIVE, tty=None)
-        router(adapter).act(APPROVE_KEY, orphan)
+        bg = make_session(1, kind=ConsoleKind.BGJOB, job_id="j", tty=None)
+        message = router(adapter).perform(bg, index=0, label="Yes", live=True)
+        assert adapter.texts == [] and adapter.keys == []
+        assert "view only" in message.lower()
+
+    def test_a_tty_with_no_window_is_also_refused(self, router, make_session):
+        adapter = FakeAdapter()
+        orphan = make_session(1, tty="/dev/ttys016", terminal=None)
+        router(adapter).perform(orphan, index=0, label="Yes", live=True)
         assert adapter.texts == [] and adapter.keys == []
 
 
 class TestDryRun:
     def test_dry_run_reports_without_sending(self, make_session):
+        from claude_herder.config import Config
         adapter = FakeAdapter()
         r = Router(Config(), dry_run=True)
         r._override = adapter
-        message = r.act(APPROVE_KEY, make_session(1, tty="/dev/ttys1"))
+        message = r.perform(make_session(1, tty="/dev/ttys1"),
+                            index=0, label="Yes", live=True)
         assert adapter.texts == [] and adapter.keys == []
         assert "dry run" in message.lower()

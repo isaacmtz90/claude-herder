@@ -1,3 +1,4 @@
+import json
 import pytest
 from claude_herder.models import ConsoleKind, Session, SessionState
 
@@ -21,7 +22,8 @@ def isolate_config_dir(tmp_path, monkeypatch):
 def make_session():
     def _make(pid, *, sid=None, state=SessionState.IDLE, kind=ConsoleKind.INTERACTIVE,
               tty=None, entrypoint="cli", job_id=None, spare=False, name=None,
-              proc_start="Mon Aug 24 00:27:05 2026", cwd="/Users/x/Repo", waiting_for=None):
+              proc_start="Mon Aug 24 00:27:05 2026", cwd="/Users/x/Repo", waiting_for=None,
+              terminal="__auto__"):
         return Session(
             session_id=sid or f"sid-{pid}",
             pid=pid,
@@ -35,5 +37,25 @@ def make_session():
             job_id=job_id,
             tty=tty,
             spare=spare,
+            # A tty implies a window unless a test says otherwise.
+            terminal=("iterm2" if tty else None) if terminal == "__auto__" else terminal,
         )
     return _make
+
+
+@pytest.fixture
+def world(tmp_path):
+    """A fake machine: registry dir plus injected process-table answers."""
+    def _build(docs, *, ttys=None, journal=(), probe=None, cwds=None):
+        for doc in docs:
+            (tmp_path / f"{doc['pid']}.json").write_text(json.dumps(doc))
+        pids = [d["pid"] for d in docs] + list((ttys or {}).keys())
+        return dict(
+            sessions_dir=tmp_path,
+            probe=probe if probe is not None
+                  else {p: "Sun Aug 23 19:27:05 2026" for p in pids},
+            ttys=ttys or {},
+            journal_pids=frozenset(journal),
+            cwds=cwds or {},
+        )
+    return _build

@@ -94,6 +94,8 @@ def parse_session_file(path: Path | str) -> Session | None:
         job_id=doc.get("jobId") if isinstance(doc.get("jobId"), str) else None,
         updated_at=doc.get("updatedAt") if isinstance(doc.get("updatedAt"), int) else 0,
         spare=bool(doc.get("spare", False)),
+        status_updated_at=(doc.get("statusUpdatedAt")
+                           if isinstance(doc.get("statusUpdatedAt"), int) else 0),
     )
 
 

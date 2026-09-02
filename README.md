@@ -9,28 +9,47 @@ Tap it, then approve from the pad without hunting through terminal tabs.
 
 ```
  ┌─────────┬─────────┬─────────┐
- │ session │ session │ session │   keys 0-2   tap to select
- ├─────────┼─────────┼─────────┤   LED = state
- │ session │ session │ session │   keys 3-5
+ │ session │ session │ session │   All twelve keys are sessions.
+ ├─────────┼─────────┼─────────┤   Tap to select (and raise its window).
+ │ session │ session │ session │   The LED is its state.
  ├─────────┼─────────┼─────────┤
- │ approve │  deny   │ interrupt│  keys 6-8
- ├─────────┼─────────┼─────────┤
- │ canned  │ canned  │ canned  │   keys 9-11  configurable
+ │ session │ session │ session │   There is no action row: everything
+ ├─────────┼─────────┼─────────┤   you *do* goes through the dial.
+ │ session │ session │ session │
  └─────────┴─────────┴─────────┘
-   encoder: rotate = move through options, press = select
+   dial: turn to move through the options, press to choose
 ```
+
+The screen, 21 columns by 5 rows:
+
+```
+ ┌─────────────────────────────┐
+ │ detect adafruit keyboard in │  inverted bar: the selected session
+ │ Simmering  18m          (*) │  what it is doing, for how long, spinner
+ │ > 1. Yes                    │  the choices it is blocked on...
+ │   2. No                     │
+ │ approved                    │  what your last press did
+ └─────────────────────────────┘
+```
+
+When nothing is blocking, those two middle rows show what the session last
+said instead, and the dial offers **Focus / Interrupt / /compact / /clear**
+(or just **Open output** for a background job that has no window).
 
 ## LED states
 
-| Appearance | Meaning |
-|---|---|
-| Red, fast blink | **Waiting on you** — permission prompt, question, dialog |
-| Amber, slow breathe | Thinking |
-| Green, dim solid | Idle, ready for input |
-| Blue, solid | Dropped to a shell |
-| Dim white | State unknown — *not* the same as idle |
+The pad speaks Claude's language rather than a scheduler's: a working session
+reads *Simmering*, *Noodling*, *Wrangling*; a blocked one reads **Needs you**.
+
+| Appearance | Screen says | Meaning |
+|---|---|---|
+| Red, fast blink | Needs you | **Waiting on you** — permission prompt, question, dialog |
+| Amber, slow breathe | a rotating gerund | Working |
+| Green, dim solid | Ready | Idle, waiting for input |
+| Blue, solid | In shell | Dropped to a shell |
+| Dim white | Unsure | State unknown — *not* the same as idle |
 | Dim (any colour) | Background job: watchable, not typeable |
-| Off | Empty slot |
+| Off | — | Empty slot |
 | All keys pulsing purple | The daemon is not talking to the pad; **state on screen is stale** |
 
 That last one matters. The pad generates it itself, on its own timer, because
@@ -154,9 +173,16 @@ than literal text, so `deny = "@escape"` is the shipped default and
 - **VS Code-hosted sessions are excluded.** They run on stdio with no
   controlling terminal, cannot receive a keystroke, and publish no `status`
   field. A key for them could neither report nor act.
-- **Background jobs are watchable, not typeable.** There is no terminal to send
-  input to. Their keys are dimmer, and the approve key is repurposed to open the
-  job's output directory.
+- **Background jobs are watchable, not typeable.** A daemon-hosted worker owns a
+  pseudo-terminal that no window displays, so there is nowhere to send a
+  keystroke. Terminal attribution is positive — walked up the process tree —
+  precisely so a windowless pty is never mistaken for a Ghostty tab. Their keys
+  are dimmer and the dial offers only "Open output".
+- **A blocked session's options are read off the screen.** The registry reports
+  *that* a session is waiting, never what the choices are, so the option list is
+  parsed from the terminal pane. That is scraping: it degrades to the safe
+  action menu rather than guessing, because a mis-parsed list would put the
+  wrong answer under your thumb.
 - **Ghostty works up to the Accessibility grant, which only you can give.**
   Verified against Ghostty 1.3.1: the adapter correctly claims a Ghostty tty and
   declines an iTerm2 one, OSC title tagging succeeds (that needs no permission),

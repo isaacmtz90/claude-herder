@@ -58,13 +58,22 @@ class Session:
     waiting_for: str | None = None
     job_id: str | None = None
     updated_at: int = 0
+    #: When the STATUS last changed (epoch ms), which is what "how long
+    #: has it been stuck?" actually depends on.
+    status_updated_at: int = 0
     tty: str | None = None
     #: Daemon spare-pool worker: real session, but not the user's work.
     spare: bool = False
+    #: Which terminal application actually displays this tty ("iterm2",
+    #: "ghostty"), or None when nothing does. A daemon-hosted worker owns a real
+    #: pseudo-terminal that no window shows, so a tty alone proves nothing.
+    terminal: str | None = None
 
     @property
     def controllable(self) -> bool:
-        return self.kind in CONTROLLABLE_KINDS and self.tty is not None
+        return (self.kind in CONTROLLABLE_KINDS
+                and self.tty is not None
+                and self.terminal is not None)
 
     @property
     def label(self) -> str:

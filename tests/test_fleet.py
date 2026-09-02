@@ -13,30 +13,14 @@ def registry_doc(pid, **over):
     return doc
 
 
-@pytest.fixture
-def world(tmp_path):
-    """A fake machine: registry dir plus injected process-table answers."""
-    def _build(docs, *, ttys=None, journal=(), probe=None, cwds=None):
-        for doc in docs:
-            (tmp_path / f"{doc['pid']}.json").write_text(json.dumps(doc))
-        pids = [d["pid"] for d in docs] + list((ttys or {}).keys())
-        return dict(
-            sessions_dir=tmp_path,
-            probe=probe if probe is not None
-                  else {p: "Sun Aug 23 19:27:05 2026" for p in pids},
-            ttys=ttys or {},
-            journal_pids=frozenset(journal),
-            cwds=cwds or {},
-        )
-    return _build
-
-
 def snap(w, previous=(), capacity=6):
     return fleet.snapshot(
         previous, capacity,
         # Inject an empty title provider: the default one shells out to
         # osascript, which makes the suite depend on a live iTerm2.
         title_provider=lambda: {},
+        # Every fake tty belongs to a real window unless a test says otherwise.
+        owner_provider=lambda: {tty: "iterm2" for tty in w["ttys"].values()},
         sessions_provider=lambda: fleet.registry.read_all(w["sessions_dir"]),
         probe_provider=lambda: w["probe"],
         tty_provider=lambda: w["ttys"],
@@ -105,6 +89,7 @@ class TestTitleJoin:
             journal_provider=lambda: w["journal_pids"],
             cwd_provider=lambda pids: w["cwds"],
             title_provider=lambda: titles,
+            owner_provider=lambda: {tty: "iterm2" for tty in w["ttys"].values()},
         )
 
     def test_matching_title_gives_the_worker_its_terminal(self, world):

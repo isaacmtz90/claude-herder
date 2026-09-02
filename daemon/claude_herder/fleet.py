@@ -131,6 +131,7 @@ def snapshot(
     journal_provider: Callable[[], Iterable[int]] = attach_journal_pids,
     cwd_provider: Callable[[Iterable[int]], Mapping[int, str]] = processes.cwds_for,
     title_provider: Callable[[], Mapping[str, str]] = _default_titles,
+    owner_provider: Callable[[], Mapping[str, str | None]] = processes.claude_terminal_owners,
     pinned: Mapping[str, int] | None = None,
 ) -> tuple[Slot, ...]:
     """Build the current slot assignment.
@@ -149,8 +150,15 @@ def snapshot(
     else:
         live = tuple(s for s in sessions if liveness.is_alive(s.pid, s.proc_start, probe))
 
-    tty_by_pid = tty_provider()
-    enriched = processes.with_ttys(live, tty_by_pid)
+    # Attribute each tty to the terminal showing it, and drop the ones no
+    # window owns. Daemon-hosted workers get a real pseudo-terminal that nothing
+    # displays; treating those as reachable would aim keystrokes at nowhere.
+    owners = owner_provider()
+    tty_by_pid = {
+        pid: tty for pid, tty in tty_provider().items()
+        if processes.has_window(tty, owners)
+    }
+    enriched = processes.with_ttys(live, tty_by_pid, owners)
 
     attach_pids = processes.attach_client_pids(
         tty_by_pid,
@@ -165,12 +173,12 @@ def snapshot(
         live, tty_by_pid, attach_pids, title_provider() if attach_pids else {})
 
     enriched = tuple(
-        s.with_(tty=claimed[s.session_id], kind=ConsoleKind.ATTACH)
+        s.with_(tty=claimed[s.session_id], kind=ConsoleKind.ATTACH,
+                terminal=owners.get(claimed[s.session_id], "iterm2"))
         if s.session_id in claimed else s
         for s in enriched
     )
     attached = processes.synthesise_attach_sessions(
-        tty_by_pid, unmatched, cwd_provider(unmatched)
-    )
+        tty_by_pid, unmatched, cwd_provider(unmatched), owners)
 
     return slots.assign(previous, enriched + attached, capacity, pinned=pinned)

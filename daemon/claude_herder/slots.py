@@ -15,8 +15,10 @@ from typing import Iterable, Mapping
 
 from .models import ConsoleKind, Session, Slot
 
-#: Top two rows of the 3x4 pad.
-DEFAULT_CAPACITY = 6
+#: Every key on the 3x4 pad is a session. There is no action row: all input
+#: goes through the rotary encoder, which keeps twelve sessions visible at once
+#: rather than six.
+DEFAULT_CAPACITY = 12
 
 
 def _is_herdable(session: Session) -> bool:

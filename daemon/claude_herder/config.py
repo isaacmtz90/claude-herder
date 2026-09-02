@@ -53,6 +53,10 @@ class Config:
         CannedKey("clear", "/clear", submit=False),       # destructive: confirm by hand
     )
 
+    #: Tapping a session key also raises its terminal window, so the pad and
+    #: the screen agree on what you are looking at.
+    focus_on_tap: bool = True
+
     poll_interval: float = 1.0
     heartbeat_interval: float = 1.0
     #: Gap between text and Enter. Claude Code's TUI reads an Enter arriving in
@@ -93,12 +97,14 @@ def load(path: Path | None = None) -> Config:
 
     permissions = raw.get("permissions") or {}
     timing = raw.get("timing") or {}
+    behaviour = raw.get("behaviour") or raw.get("behavior") or {}
     return Config(
         approve_key=str(permissions.get("approve", _DEFAULTS.approve_key)),
         deny_key=str(permissions.get("deny", _DEFAULTS.deny_key)),
         verified_against=str(
             permissions.get("verified_against", _DEFAULTS.verified_against)),
         canned=canned,
+        focus_on_tap=bool(behaviour.get("focus_on_tap", _DEFAULTS.focus_on_tap)),
         poll_interval=float(timing.get("poll_interval", _DEFAULTS.poll_interval)),
         heartbeat_interval=float(
             timing.get("heartbeat_interval", _DEFAULTS.heartbeat_interval)),

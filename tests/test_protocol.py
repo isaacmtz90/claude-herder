@@ -71,3 +71,27 @@ def test_builders_produce_decodable_frames():
     for frame in (p.heartbeat_frame(), p.sel_frame(2), p.toast_frame("hi")):
         frames, rest = p.decode(p.encode(frame))
         assert rest == b"" and len(frames) == 1
+
+
+class TestContextFrame:
+    def test_carries_state_and_label(self):
+        frames, _ = p.decode(p.encode(p.context_frame("busy", "Wrangling")))
+        assert frames[0]["st"] == "busy" and frames[0]["label"] == "Wrangling"
+
+    def test_options_are_stringified(self):
+        frame = p.context_frame("waiting", "Needs you", options=["Yes", 2])
+        assert frame["o"] == ["Yes", "2"]
+
+    def test_live_marks_a_real_prompt(self):
+        assert p.context_frame("waiting", "x", options=["a"], live=True)["live"] is True
+        assert p.context_frame("idle", "x", options=["a"])["live"] is False
+
+    def test_empty_extras_are_omitted_to_keep_the_frame_small(self):
+        frame = p.context_frame("idle", "Ready")
+        assert "sum" not in frame and "o" not in frame and "age" not in frame
+
+    def test_a_full_context_frame_fits_one_line(self):
+        frame = p.context_frame(
+            "waiting", "Needs you", summary="approve Bash: echo hello",
+            age="2m", options=["Yes", "Yes, and don't ask again", "No"], live=True)
+        assert len(p.encode(frame)) < p.MAX_LINE_BYTES

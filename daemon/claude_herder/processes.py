@@ -89,13 +89,25 @@ def attach_client_pids(
 
 
 def with_ttys(
-    sessions: Iterable[Session], tty_by_pid: Mapping[int, str]
+    sessions: Iterable[Session],
+    tty_by_pid: Mapping[int, str],
+    owners: Mapping[str, str | None] | None = None,
 ) -> tuple[Session, ...]:
-    """Attach the owning terminal to each session. Returns new objects."""
-    return tuple(
-        session.with_(tty=tty_by_pid[session.pid]) if session.pid in tty_by_pid else session
-        for session in sessions
-    )
+    """Attach each session's terminal, and which app displays it.
+
+    tty and terminal are set together on purpose: a tty alone does not mean a
+    human can see the session, so letting them drift apart is what allowed a
+    windowless daemon pty to look controllable.
+    """
+    owners = owners if owners is not None else {}
+    attached = []
+    for session in sessions:
+        tty = tty_by_pid.get(session.pid)
+        if tty is None:
+            attached.append(session)
+            continue
+        attached.append(session.with_(tty=tty, terminal=owners.get(tty, "iterm2")))
+    return tuple(attached)
 
 
 def cwds_for(pids: Iterable[int]) -> dict[int, str]:
@@ -129,6 +141,7 @@ def synthesise_attach_sessions(
     tty_by_pid: Mapping[int, str],
     attach_pids: Iterable[int],
     cwd_by_pid: Mapping[int, str] | None = None,
+    owners: Mapping[str, str | None] | None = None,
 ) -> tuple[Session, ...]:
     """Build Session records for attach consoles.
 
@@ -138,6 +151,7 @@ def synthesise_attach_sessions(
     than admitting we do not know.
     """
     cwd_by_pid = cwd_by_pid or {}
+    owners = owners if owners is not None else {}
     made = []
     for pid in sorted(attach_pids):
         tty = tty_by_pid.get(pid)
@@ -155,5 +169,103 @@ def synthesise_attach_sessions(
             state=SessionState.UNKNOWN,
             kind=ConsoleKind.ATTACH,
             tty=tty,
+            terminal=owners.get(tty, "iterm2"),
         ))
     return tuple(made)
+
+
+#: Terminal applications we know how to drive, matched against process names in
+#: a tty's ancestry. The value is the adapter name that owns them.
+TERMINAL_APPS = {
+    "iterm2": "iterm2",
+    "iterm": "iterm2",
+    "itermserver": "iterm2",
+    "ghostty": "ghostty",
+}
+
+#: How far up the process tree to look before giving up.
+MAX_ANCESTRY = 12
+
+
+def _parse_tree(text: str) -> tuple[dict[int, int], dict[int, str]]:
+    parent: dict[int, int] = {}
+    name: dict[int, str] = {}
+    for line in text.splitlines():
+        fields = line.split(None, 2)
+        if len(fields) != 3:
+            continue
+        try:
+            pid, ppid = int(fields[0]), int(fields[1])
+        except ValueError:
+            continue
+        parent[pid] = ppid
+        name[pid] = fields[2].strip().lstrip("-").rsplit("/", 1)[-1]
+    return parent, name
+
+
+def terminal_owners(ps_tty: str, ps_tree: str) -> dict[str, str | None]:
+    """Attribute each Claude-owned tty to the terminal app displaying it.
+
+    Positive attribution, deliberately. A daemon-hosted worker has a real
+    pseudo-terminal that no window shows, so "not iTerm2, therefore Ghostty"
+    would aim keystrokes at a window that does not exist. A tty whose ancestry
+    contains no terminal we recognise maps to None.
+    """
+    parent, name = _parse_tree(ps_tree)
+    owners: dict[str, str | None] = {}
+
+    for pid, tty in parse_ps_tty(ps_tty).items():
+        owner = None
+        current, seen = pid, set()
+        for _ in range(MAX_ANCESTRY):
+            if current in seen:      # defensive: a cycle would loop forever
+                break
+            seen.add(current)
+            # Prefix match: process names carry versions ("iTermServer-3.6.6").
+            proc = name.get(current, "").lower()
+            candidate = None
+            for prefix, adapter in TERMINAL_APPS.items():
+                if proc.startswith(prefix):
+                    candidate = adapter
+                    break
+            if candidate:
+                owner = candidate
+                break
+            nxt = parent.get(current)
+            if nxt is None or nxt == current or nxt <= 1:
+                break
+            current = nxt
+        owners[tty] = owner
+    return owners
+
+
+def has_window(tty: str | None, owners: Mapping[str, str | None]) -> bool:
+    """True only if some terminal application is actually showing this tty."""
+    if tty is None:
+        return False
+    return owners.get(tty) is not None
+
+
+def process_tree() -> str:
+    """Raw `ps` output for ancestry walking."""
+    try:
+        return subprocess.run(
+            ["ps", "-Ao", "pid=,ppid=,comm="],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("cannot read process tree: %s", exc)
+        return ""
+
+
+def claude_terminal_owners() -> dict[str, str | None]:
+    """Live attribution for every Claude-owned tty."""
+    try:
+        tty_text = subprocess.run(
+            ["ps", "-Ao", "pid=,tty=,comm="],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("cannot read process table: %s", exc)
+        return {}
+    return terminal_owners(tty_text, process_tree())

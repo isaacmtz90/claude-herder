@@ -89,50 +89,65 @@ class TestSelection:
         h.refresh()
         assert h.selected is None, "a stale selection would target nothing"
 
-    def test_acting_with_nothing_selected_warns_instead_of_guessing(self, herder):
-        h, pad = herder([])
-        h.refresh()
-        h.on_key(daemon.__dict__.get("APPROVE", 6))
-        toasts = [f["m"] for f in pad.frames_of("toast")]
-        assert any("no session" in t.lower() for t in toasts)
-
 
 class TestEncoder:
-    def test_rotation_is_forwarded_to_the_router(self, herder, make_session, monkeypatch):
-        h, _ = herder([make_session(1, tty="/dev/ttys1")])
-        h.refresh(); h.on_key(0)
-        seen = []
-        monkeypatch.setattr(h.router, "scroll", lambda s, d: seen.append(d) or "")
-        h.on_frame({"t": "enc", "d": -2})
-        assert seen == [-2]
+    """The pad owns the option cursor so the dial feels instant; the host only
+    hears about the final choice."""
 
-    def test_press_is_forwarded_as_select(self, herder, make_session, monkeypatch):
+    def test_encoder_motion_is_not_acted_on_by_the_host(self, herder, make_session):
+        h, pad = herder([make_session(1, tty="/dev/ttys1")])
+        h.refresh(); h.on_key(0)
+        before = len(pad.sent)
+        h.on_frame({"t": "enc", "d": -2})
+        assert len(pad.sent) == before, "rotation is informational only"
+
+    def test_a_pick_is_routed(self, herder, make_session):
         h, _ = herder([make_session(1, tty="/dev/ttys1")])
         h.refresh(); h.on_key(0)
         seen = []
-        monkeypatch.setattr(h.router, "select_option", lambda s: seen.append(True) or "")
-        h.on_frame({"t": "encbtn", "e": "press"})
+        h.router.perform = lambda s, index, label, live: seen.append((index, label, live)) or "ok"
+        h.on_frame({"t": "pick", "i": 1, "l": "No"})
+        assert seen == [(1, "No", False)]
+
+    def test_a_pick_on_a_live_prompt_is_marked_live(self, herder, make_session):
+        from claude_herder.models import SessionState
+        h, _ = herder([make_session(1, tty="/dev/ttys1", state=SessionState.WAITING)])
+        h.options_provider = staticmethod(lambda s: ["Yes", "No"])
+        h.refresh(); h.on_key(0)
+        h.refresh()
+        seen = []
+        h.router.perform = lambda s, index, label, live: seen.append(live) or "ok"
+        h.on_frame({"t": "pick", "i": 0, "l": "Yes"})
         assert seen == [True]
+
+    def test_a_pick_with_nothing_selected_warns(self, herder):
+        h, pad = herder([])
+        h.refresh()
+        h.on_frame({"t": "pick", "i": 0, "l": "Yes"})
+        assert any("no session" in f.get("m", "").lower() for f in pad.frames_of("toast"))
 
     def test_unknown_frames_are_ignored_quietly(self, herder):
         h, _ = herder([])
         h.on_frame({"t": "nonsense"})
         h.on_frame({})
-        # no exception is the assertion
 
 
-class TestActionsReachTheRouter:
-    def test_a_control_key_produces_a_toast(self, herder, make_session):
+class TestContextFrames:
+    def test_a_context_frame_follows_selection(self, herder, make_session):
+        h, pad = herder([make_session(1, tty="/dev/ttys1")])
+        h.refresh(); h.on_key(0); h.refresh()
+        assert pad.frames_of("ctx"), "the detail area needs a frame"
+
+    def test_an_unchanged_context_is_not_resent(self, herder, make_session):
         h, pad = herder([make_session(1, tty="/dev/ttys1")])
         h.refresh(); h.on_key(0)
-        h.on_key(6)
-        assert pad.frames_of("toast"), "the user should see what the key did"
+        h.refresh(); h.refresh(); h.refresh()
+        assert len(pad.frames_of("ctx")) == 1
 
-    def test_dry_run_never_claims_to_have_sent(self, herder, make_session):
-        h, pad = herder([make_session(1, tty="/dev/ttys1")])
-        h.refresh(); h.on_key(0)
-        h.on_key(6)
-        assert any("dry run" in f["m"].lower() for f in pad.frames_of("toast"))
+    def test_no_context_is_sent_for_an_empty_slot(self, herder):
+        h, pad = herder([])
+        h.refresh()
+        assert pad.frames_of("ctx") == []
 
 
 class TestShutdown:
@@ -141,3 +156,45 @@ class TestShutdown:
         h.stop()
         h.run()
         assert pad.closed
+
+
+class TestTapFocusesTheTerminal:
+    """Requirement 5: pressing a session key should also bring its terminal
+    forward, so the pad and the screen agree on what you are looking at."""
+
+    def test_tapping_a_windowed_session_focuses_it(self, herder, make_session):
+        h, _ = herder([make_session(1, tty="/dev/ttys005")])
+        h.refresh()
+        focused = []
+        h.router.focus = lambda s: focused.append(s.tty) or True
+        h.on_key(0)
+        assert focused == ["/dev/ttys005"]
+
+    def test_tapping_a_windowless_session_does_not_try_to_focus(
+            self, herder, make_session):
+        from claude_herder.models import ConsoleKind
+        bg = make_session(1, kind=ConsoleKind.BGJOB, job_id="j", tty=None)
+        h, _ = herder([bg])
+        h.refresh()
+        focused = []
+        h.router.focus = lambda s: focused.append(s) or True
+        h.on_key(0)
+        assert focused == [], "there is no window to raise"
+
+    def test_tapping_an_empty_slot_focuses_nothing(self, herder):
+        h, _ = herder([])
+        h.refresh()
+        focused = []
+        h.router.focus = lambda s: focused.append(s) or True
+        h.on_key(3)
+        assert focused == []
+
+    def test_focus_on_tap_can_be_switched_off(self, herder, make_session):
+        from claude_herder.config import Config
+        h, _ = herder([make_session(1, tty="/dev/ttys005")])
+        h.config = Config(focus_on_tap=False)
+        h.refresh()
+        focused = []
+        h.router.focus = lambda s: focused.append(s) or True
+        h.on_key(0)
+        assert focused == []

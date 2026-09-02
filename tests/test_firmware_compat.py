@@ -90,3 +90,26 @@ def test_the_protocol_frame_keys_match_the_daemon():
                   protocol.toast_frame("x"), protocol.heartbeat_frame()):
         tag = frame["t"]
         assert f'"{tag}"' in source, f"firmware does not handle frame tag {tag!r}"
+
+
+def test_slot_count_agrees_across_the_usb_boundary():
+    """The pad and the daemon must agree on how many keys are sessions.
+
+    Nothing type-checks across the serial link, so a mismatch would show up as
+    silently missing slots rather than as an error.
+    """
+    from claude_herder.slots import DEFAULT_CAPACITY
+    source = (FIRMWARE / "code.py").read_text()
+    for line in source.splitlines():
+        if line.startswith("SLOT_KEYS"):
+            firmware_slots = int(line.split("=")[1].split("#")[0].strip())
+            break
+    else:
+        raise AssertionError("firmware does not define SLOT_KEYS")
+    assert firmware_slots == DEFAULT_CAPACITY == 12
+
+
+def test_firmware_has_no_action_key_block():
+    """Requirement: the action row is gone; every key is a session."""
+    source = (FIRMWARE / "code.py").read_text()
+    assert "ACTION_KEYS" not in source, "action keys should no longer exist"

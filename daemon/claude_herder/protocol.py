@@ -65,6 +65,24 @@ def slots_frame(slots: list[dict]) -> dict:
     return {"t": "slots", "v": slots}
 
 
+def context_frame(state: str, label: str, summary: str = "", age: str = "",
+                  options: list[str] | None = None, live: bool = False) -> dict:
+    """Detail for the selected session: what it is doing, and what you can do.
+
+    `options` are what the encoder scrolls. `live` marks them as a real prompt
+    the session is blocked on, rather than our own action menu -- the pad shows
+    those immediately instead of waiting to be asked.
+    """
+    frame = {"t": "ctx", "st": state, "label": label, "live": bool(live)}
+    if summary:
+        frame["sum"] = summary
+    if age:
+        frame["age"] = age
+    if options:
+        frame["o"] = [str(o) for o in options]
+    return frame
+
+
 def sel_frame(index: int) -> dict:
     return {"t": "sel", "i": int(index)}
 
