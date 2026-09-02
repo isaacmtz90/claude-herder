@@ -95,3 +95,15 @@ class TestContextFrame:
             "waiting", "Needs you", summary="approve Bash: echo hello",
             age="2m", options=["Yes", "Yes, and don't ask again", "No"], live=True)
         assert len(p.encode(frame)) < p.MAX_LINE_BYTES
+
+
+class TestCursorFrame:
+    def test_carries_the_index(self):
+        frames, _ = p.decode(p.encode(p.cursor_frame(2)))
+        assert frames[0] == {"t": "cur", "i": 2}
+
+    def test_coerces_to_an_int(self):
+        assert p.cursor_frame(True)["i"] == 1
+
+    def test_ping_is_tiny(self):
+        assert len(p.encode(p.ping_frame())) < 20

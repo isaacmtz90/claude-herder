@@ -198,13 +198,37 @@ class Herder:
                         break
                 self._redraw()
         elif kind == "ctx":
+            # The cursor follows the OPTIONS, not the frame. Context frames
+            # arrive about once a second because the elapsed-time field ticks,
+            # and resetting on every one of those dragged the dial back to the
+            # top while the user was still turning it.
+            previous = self._options()
             self.context = frame
-            self.cursor = 0
+            options = self._options()
+            if options != previous:
+                self.cursor = 0
+            elif self.cursor >= len(options):
+                self.cursor = max(0, len(options) - 1)
             # A live prompt is urgent: show its options straight away rather
             # than waiting for the user to discover them with the encoder.
             if frame.get("live"):
                 self.menu_until = time.monotonic() + 3600.0
             self._redraw()
+        elif kind == "cur":
+            # Host-set cursor: lets the daemon start the highlight where the
+            # dialog's own selection already is.
+            wanted = frame.get("i")
+            if isinstance(wanted, int):
+                options = self._options()
+                if options:
+                    self.cursor = max(0, min(len(options) - 1, wanted))
+                    self._redraw()
+        elif kind == "ping":
+            # Diagnostics: lets the host read back what the pad is showing.
+            self._say({"t": "state", "cur": self.cursor,
+                       "opts": len(self._options()),
+                       "menu": time.monotonic() < self.menu_until,
+                       "sel": self.selected})
         elif kind == "sel":
             self.selected = frame.get("i")
             self._redraw()

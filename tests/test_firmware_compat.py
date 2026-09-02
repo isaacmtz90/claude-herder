@@ -87,7 +87,9 @@ def test_the_protocol_frame_keys_match_the_daemon():
     from claude_herder import protocol
     source = (FIRMWARE / "code.py").read_text()
     for frame in (protocol.slots_frame([]), protocol.sel_frame(0),
-                  protocol.toast_frame("x"), protocol.heartbeat_frame()):
+                  protocol.toast_frame("x"), protocol.heartbeat_frame(),
+                  protocol.context_frame("idle", "Ready"),
+                  protocol.cursor_frame(0), protocol.ping_frame()):
         tag = frame["t"]
         assert f'"{tag}"' in source, f"firmware does not handle frame tag {tag!r}"
 

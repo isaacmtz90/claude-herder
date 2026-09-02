@@ -116,8 +116,17 @@ class Herder:
             seed=abs(hash(session.session_id)) + session.status_updated_at // 1000,
         )
         if frame != self.last_context:
+            options_changed = frame.get("o") != (self.last_context or {}).get("o")
             if self.pad.send(frame):
                 self.last_context = frame
+                # Start the highlight where the dialog's own selection is --
+                # but only when a NEW option list appears. Re-pinning on every
+                # poll would drag the highlight back under the user's fingers,
+                # since these frames arrive about once a second as the elapsed
+                # time ticks.
+                if (options_changed and frame.get("live")
+                        and self.cursor_hint is not None):
+                    self.pad.send(protocol.cursor_frame(self.cursor_hint))
 
     def on_frame(self, frame: dict) -> None:
         kind = frame.get("t")

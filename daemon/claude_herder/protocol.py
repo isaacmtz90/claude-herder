@@ -87,6 +87,16 @@ def sel_frame(index: int) -> dict:
     return {"t": "sel", "i": int(index)}
 
 
+def cursor_frame(index: int) -> dict:
+    """Place the pad's highlight, e.g. on the dialog's own current selection."""
+    return {"t": "cur", "i": int(index)}
+
+
+def ping_frame() -> dict:
+    """Ask the pad to report what it is showing. Diagnostics only."""
+    return {"t": "ping"}
+
+
 def toast_frame(message: str) -> dict:
     return {"t": "toast", "m": str(message)[:64]}
 

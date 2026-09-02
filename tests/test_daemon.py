@@ -245,3 +245,49 @@ class TestPickIsResolvedAgainstAFreshRead:
         h.router.perform = lambda s, index, label, live, current=None: "ok"
         h.on_pick(0, "Focus")
         assert scrapes == [], "only live prompts need re-reading"
+
+
+class TestCursorPinning:
+    """The pad's highlight should start on the dialog's own selection -- but
+    only when a new option list appears. Re-pinning on every poll would drag
+    the highlight back while the user is still turning the dial, which is the
+    bug this guards against."""
+
+    def _blocked(self, herder, make_session, options):
+        from claude_herder.models import SessionState
+        h, pad = herder([make_session(1, tty="/dev/ttys1", state=SessionState.WAITING)])
+        h.options_provider = lambda s: options
+        return h, pad
+
+    def test_a_new_option_list_pins_the_cursor(self, herder, make_session):
+        h, pad = self._blocked(herder, make_session, ["Yes", "No", "Maybe"])
+        h.refresh(); h.on_key(0)
+        h.cursor_hint = 2
+        h.refresh()
+        assert [f["i"] for f in pad.frames_of("cur")] == [2]
+
+    def test_an_age_only_update_does_not_re_pin(self, herder, make_session):
+        h, pad = self._blocked(herder, make_session, ["Yes", "No"])
+        h.refresh(); h.on_key(0)
+        h.cursor_hint = 1
+        h.refresh()
+        before = len(pad.frames_of("cur"))
+        # Same options, later clock: the context frame changes but the option
+        # list does not.
+        for _ in range(3):
+            h.refresh()
+        assert len(pad.frames_of("cur")) == before, "must not fight the dial"
+
+    def test_no_pin_without_a_known_cursor(self, herder, make_session):
+        h, pad = self._blocked(herder, make_session, ["Yes", "No"])
+        h.refresh(); h.on_key(0)
+        h.cursor_hint = None
+        h.refresh()
+        assert pad.frames_of("cur") == []
+
+    def test_no_pin_for_a_plain_action_menu(self, herder, make_session):
+        h, pad = herder([make_session(1, tty="/dev/ttys1")])
+        h.refresh(); h.on_key(0)
+        h.cursor_hint = 1
+        h.refresh()
+        assert pad.frames_of("cur") == [], "only live prompts have a real cursor"
