@@ -178,11 +178,31 @@ than literal text, so `deny = "@escape"` is the shipped default and
   keystroke. Terminal attribution is positive — walked up the process tree —
   precisely so a windowless pty is never mistaken for a Ghostty tab. Their keys
   are dimmer and the dial offers only "Open output".
-- **A blocked session's options are read off the screen.** The registry reports
-  *that* a session is waiting, never what the choices are, so the option list is
-  parsed from the terminal pane. That is scraping: it degrades to the safe
-  action menu rather than guessing, because a mis-parsed list would put the
-  wrong answer under your thumb.
+- **A blocked session's options are read off the screen — for now.** The
+  registry reports *that* a session is waiting, never what the choices are. A
+  pending question exposes its options structurally in the job state and that
+  is used when available; otherwise the list is parsed from the pane. Scraping
+  degrades to the safe action menu rather than guessing, because a mis-parsed
+  list would put the wrong answer under your thumb.
+
+  **The better route, not yet built:** the `PermissionRequest` hook receives
+  `permission_suggestions` as data *and can answer the prompt* by writing a
+  decision to stdout, with a 600 s default timeout — ample for a dial
+  round-trip. That would remove every parsing failure mode below. It is the
+  recommended next step.
+
+- **Answers move the dialog's cursor; they never type a number.** Typing the
+  option number looks simpler and is wrong in general: a family of dialogs
+  (workspace trust, bypass-permissions, IDE prompts) renders with indexes
+  hidden, where a digit is silently ignored, and which rows a dialog offers
+  varies with feature flags — so a fixed position is not a fixed answer. Arrows
+  and Enter behave identically everywhere. If the cursor is not visible in the
+  pane, the pad refuses to act rather than guess.
+
+- **Unnumbered dialogs are deliberately not offered on the pad.** Their rows
+  cannot be told from the prose above them with confidence, and the family
+  includes workspace-trust — a security decision. Those fall back to the action
+  menu, where Focus raises the window so you can read and answer it properly.
 - **Ghostty works up to the Accessibility grant, which only you can give.**
   Verified against Ghostty 1.3.1: the adapter correctly claims a Ghostty tty and
   declines an iTerm2 one, OSC title tagging succeeds (that needs no permission),

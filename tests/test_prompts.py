@@ -103,13 +103,110 @@ class TestRobustness:
 
     def test_out_of_sequence_numbering_is_rejected(self):
         # A wrapped line that happens to start with a digit must not be eaten.
+        # Only "Yes" survives, and one option is not a choice, so nothing is
+        # offered rather than a half-read menu.
         pane = " Do you want to proceed?\n ❯ 1. Yes\n   7. stray\n"
-        assert prompts.parse_options(pane) == ("Yes",)
+        assert prompts.parse_options(pane) == ()
+        assert "stray" not in "".join(prompts.parse_options(pane))
 
     def test_absurdly_long_labels_are_truncated(self):
-        pane = " Do you want to proceed?\n ❯ 1. " + "x" * 500 + "\n"
+        pane = (" Do you want to proceed?\n ❯ 1. " + "x" * 500 + "\n"
+                "   2. No\n")
         assert len(prompts.parse_options(pane)[0]) <= prompts.MAX_LABEL
+
+    def test_a_single_option_is_not_a_choice(self):
+        pane = " Do you want to proceed?\n ❯ 1. Yes\n"
+        assert prompts.parse_options(pane) == ()
 
     def test_more_options_than_a_menu_can_hold_are_capped(self):
         body = "".join(f"   {i}. option {i}\n" for i in range(1, 15))
         assert len(prompts.parse_options(" Do you want to proceed?\n" + body)) <= 9
+
+
+UNNUMBERED = """\
+ Accessing workspace:
+ /Users/x/Repo
+ Quick safety check: Is this a project you created or one you trust?
+ ❯ No, exit
+   Yes, I trust this folder
+"""
+
+PLAN = """\
+ Claude has written up a plan and is ready to execute. Would you like to proceed?
+ ❯ 1. Yes, auto-accept edits
+   2. Yes, manually approve edits
+   3. No, keep planning
+"""
+
+CURLY = """\
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don\u2019t ask again for git status:* commands
+   3. No
+ esc to cancel
+"""
+
+
+class TestRealAnchors:
+    def test_the_plan_approval_header_is_recognised(self):
+        assert prompts.parse_options(PLAN)[2] == "No, keep planning"
+
+    def test_unnumbered_dialogs_are_deliberately_refused(self):
+        # Workspace-trust and bypass-permissions render with indexes hidden.
+        # Their rows are indistinguishable from the prose above them, focus can
+        # start on either row, and a wrong answer here is a security decision.
+        # Refusing sends the user to the action menu instead, where "Focus"
+        # raises the dialog to be read properly.
+        assert prompts.parse_options(UNNUMBERED) == ()
+        assert prompts.highlighted_index(UNNUMBERED) is None
+
+    def test_a_curly_apostrophe_is_normalised(self):
+        options = prompts.parse_options(CURLY)
+        assert "don't ask again" in options[1]
+        assert "\u2019" not in options[1]
+
+
+class TestDecorations:
+    def test_a_trailing_esc_hint_is_stripped(self):
+        pane = " Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude (esc)\n"
+        assert prompts.parse_options(pane)[1] == "No, and tell Claude"
+
+    def test_a_shift_tab_hint_is_stripped(self):
+        pane = (" Do you want to proceed?\n ❯ 1. Yes\n"
+                "   2. Yes, and switch to accept edits (shift+tab)\n")
+        assert prompts.parse_options(pane)[1] == "Yes, and switch to accept edits"
+
+    def test_a_percentage_in_a_label_is_kept(self):
+        # "(37% used)" is real content, not a keybinding hint.
+        pane = (" Do you want to proceed?\n ❯ 1. Yes, clear context (37% used)\n"
+                "   2. No\n")
+        assert "37%" in prompts.parse_options(pane)[0]
+
+
+class TestScrolledLists:
+    def test_a_scroll_indicator_is_not_an_option(self):
+        pane = (" Do you want to proceed?\n ❯ 1. Yes\n   2. No\n \u2193 \n")
+        assert prompts.parse_options(pane) == ("Yes", "No")
+
+    def test_a_scrolled_list_is_reported_as_partial(self):
+        pane = (" Do you want to proceed?\n   1. Yes\n \u2193 2. No\n")
+        assert prompts.is_partial(pane) is True
+
+    def test_a_complete_list_is_not_partial(self):
+        assert prompts.is_partial(REAL_TWO_OPTION) is False
+
+
+class TestUnparseableShapes:
+    def test_a_multi_select_question_is_refused(self):
+        # Checkbox tabs mean AskUserQuestion, which can be multi-select and
+        # multi-question; modelling it as pick-one would be wrong.
+        pane = " \u2610 Q1  \u2612 Q2\n Do you want to proceed?\n ❯ 1. A\n   2. B\n"
+        assert prompts.parse_options(pane) == ()
+
+    def test_screen_reader_mode_is_refused(self):
+        pane = " 1. Yes\n 2. No\n Select with numbers [1-2] or up / down arrow keys.\n"
+        assert prompts.parse_options(pane) == ()
+
+    def test_a_yes_no_accessibility_prompt_is_refused(self):
+        pane = " y. Yes, I trust this folder\n n. No, exit\n Enter y/n:\n"
+        assert prompts.parse_options(pane) == ()

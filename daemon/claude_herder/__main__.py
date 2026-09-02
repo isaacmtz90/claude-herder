@@ -8,7 +8,7 @@ import signal
 import sys
 import time
 
-from . import context, fleet, prompts, protocol, render, summaries
+from . import context, fleet, jobstate, prompts, protocol, render, summaries
 from .actions import Router
 from .config import load as load_config
 from .device import Pad
@@ -32,7 +32,9 @@ class Herder:
         self.router = Router(config, dry_run=dry_run)
         # Injected so the option and summary sources can be swapped in tests.
         self.options_provider = self._read_options
-        self.summary_provider = summaries.summarise
+        self.summary_provider = self._summarise
+        #: Where the blocked dialog's own cursor sits, from the last scrape.
+        self.cursor_hint: int | None = None
         # Seed from the layout the last run left behind, so a restart does not
         # reshuffle the keys the user has learned.
         self._layout = load_layout()
@@ -41,15 +43,38 @@ class Herder:
     def stop(self, *_):
         self._running = False
 
-    def _read_options(self, session) -> tuple[str, ...]:
-        """Read a blocked session's choices off its terminal.
+    def _summarise(self, session) -> str:
+        """One line about the session.
 
-        Only ever called for a session already reported as waiting, so the
-        scrape is rare rather than per-poll.
+        The job's own state file is authoritative: it is what the fleet view
+        renders, and for a blocked session its `needs` field is already a
+        compact description of the question. The transcript is only a fallback
+        for sessions with no job record.
         """
+        summary = jobstate.summary_for(session.job_id)
+        return summary or summaries.summarise(session)
+
+    def _read_options(self, session) -> tuple[str, ...]:
+        """Read a blocked session's choices.
+
+        A pending AskUserQuestion exposes its options structurally in the job
+        state, which is exact. Otherwise fall back to reading them off the
+        terminal, recording where the dialog's cursor sits so the answer can be
+        given by moving it rather than by typing a position.
+        """
+        self.cursor_hint = None
+
+        structured = jobstate.question_options(session.job_id)
+        if structured:
+            return structured
+
         if session.terminal != "iterm2" or not session.tty:
             return ()
-        return prompts.parse_options(self.router._iterm.pane_text(session.tty))
+        pane = self.router._iterm.pane_text(session.tty)
+        options = prompts.parse_options(pane)
+        if options:
+            self.cursor_hint = prompts.highlighted_index(pane)
+        return options
 
     def selected_session(self):
         for slot in self.slots:
@@ -128,7 +153,8 @@ class Herder:
             self.pad.send(protocol.toast_frame("no session selected"))
             return
         live = bool((self.last_context or {}).get("live"))
-        message = self.router.perform(session, index, label, live)
+        message = self.router.perform(session, index, label, live,
+                                      current=self.cursor_hint)
         log.info("picked %r on %s -> %s", label, session.label, message)
         if message:
             self.pad.send(protocol.toast_frame(message))

@@ -105,18 +105,20 @@ class TestEncoder:
         h, _ = herder([make_session(1, tty="/dev/ttys1")])
         h.refresh(); h.on_key(0)
         seen = []
-        h.router.perform = lambda s, index, label, live: seen.append((index, label, live)) or "ok"
+        h.router.perform = (lambda s, index, label, live, current=None:
+                            seen.append((index, label, live)) or "ok")
         h.on_frame({"t": "pick", "i": 1, "l": "No"})
         assert seen == [(1, "No", False)]
 
     def test_a_pick_on_a_live_prompt_is_marked_live(self, herder, make_session):
         from claude_herder.models import SessionState
         h, _ = herder([make_session(1, tty="/dev/ttys1", state=SessionState.WAITING)])
-        h.options_provider = staticmethod(lambda s: ["Yes", "No"])
+        h.options_provider = lambda s: ["Yes", "No"]
         h.refresh(); h.on_key(0)
         h.refresh()
         seen = []
-        h.router.perform = lambda s, index, label, live: seen.append(live) or "ok"
+        h.router.perform = (lambda s, index, label, live, current=None:
+                            seen.append(live) or "ok")
         h.on_frame({"t": "pick", "i": 0, "l": "Yes"})
         assert seen == [True]
 

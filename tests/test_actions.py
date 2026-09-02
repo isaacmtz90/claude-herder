@@ -34,32 +34,53 @@ def router():
 
 
 class TestPickingALivePromptOption:
-    """A blocked session's options come from the prompt itself, and the pad
-    sends back the index the user landed on."""
+    """Answering a prompt by moving the TUI's own cursor.
 
-    def test_the_first_option_sends_the_digit_one(self, router, make_session):
+    Not by typing the option number: a whole family of dialogs renders with
+    indexes hidden, where a digit is silently a no-op, and option order varies
+    with feature flags so "2" does not reliably mean the same row twice.
+    Arrow keys and Enter work in every variant.
+    """
+
+    def test_moving_down_to_a_later_option(self, router, make_session):
         adapter = FakeAdapter()
         router(adapter).perform(make_session(1, tty="/dev/ttys1"),
-                                index=0, label="Yes", live=True)
-        assert adapter.texts == [("/dev/ttys1", "1", False)]
+                                index=2, label="No", live=True, current=0)
+        assert [k for _t, k in adapter.keys] == ["down", "down", "enter"]
 
-    def test_the_third_option_sends_the_digit_three(self, router, make_session):
+    def test_moving_up_to_an_earlier_option(self, router, make_session):
         adapter = FakeAdapter()
         router(adapter).perform(make_session(1, tty="/dev/ttys1"),
-                                index=2, label="No", live=True)
-        assert adapter.texts == [("/dev/ttys1", "3", False)]
+                                index=0, label="Yes", live=True, current=2)
+        assert [k for _t, k in adapter.keys] == ["up", "up", "enter"]
 
-    def test_no_newline_is_appended(self, router, make_session):
+    def test_already_on_the_option_just_confirms(self, router, make_session):
         adapter = FakeAdapter()
         router(adapter).perform(make_session(1, tty="/dev/ttys1"),
-                                index=0, label="Yes", live=True)
-        assert adapter.texts[0][2] is False
+                                index=1, label="No", live=True, current=1)
+        assert [k for _t, k in adapter.keys] == ["enter"]
 
-    def test_an_out_of_range_index_is_refused(self, router, make_session):
+    def test_nothing_is_typed(self, router, make_session):
+        adapter = FakeAdapter()
+        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                index=1, label="No", live=True, current=0)
+        assert adapter.texts == [], "digits are unreliable; never type them"
+
+    def test_an_unknown_cursor_refuses_rather_than_guessing(
+            self, router, make_session):
+        # If the pointer was not visible we cannot tell where the cursor is,
+        # and guessing index 0 could approve something the user meant to deny.
         adapter = FakeAdapter()
         message = router(adapter).perform(make_session(1, tty="/dev/ttys1"),
-                                          index=99, label="?", live=True)
-        assert adapter.texts == [] and "range" in message.lower()
+                                          index=1, label="No", live=True, current=None)
+        assert adapter.keys == [] and adapter.texts == []
+        assert "cursor" in message.lower() or "unknown" in message.lower()
+
+    def test_an_absurd_distance_is_refused(self, router, make_session):
+        adapter = FakeAdapter()
+        message = router(adapter).perform(make_session(1, tty="/dev/ttys1"),
+                                          index=99, label="?", live=True, current=0)
+        assert adapter.keys == [] and "range" in message.lower()
 
 
 class TestPickingAMenuAction:
@@ -124,6 +145,6 @@ class TestDryRun:
         r = Router(Config(), dry_run=True)
         r._override = adapter
         message = r.perform(make_session(1, tty="/dev/ttys1"),
-                            index=0, label="Yes", live=True)
+                            index=0, label="Yes", live=True, current=0)
         assert adapter.texts == [] and adapter.keys == []
         assert "dry run" in message.lower()

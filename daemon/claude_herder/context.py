@@ -16,21 +16,44 @@ from .protocol import context_frame
 
 log = logging.getLogger(__name__)
 
-#: Rotating gerunds for a session that is working, in Claude Code's register.
-#: Kept to 12 characters so they fit beside the elapsed time and spinner.
+#: Claude Code's own spinner verbs, taken from the 186-word array in the CLI
+#: rather than invented. Filtered to 12 characters so they fit beside the
+#: elapsed time and the throbber.
 WORKING_WORDS = (
-    "Wrangling", "Herding", "Noodling", "Percolating", "Simmering",
-    "Cogitating", "Tinkering", "Whirring", "Puttering", "Brewing",
-    "Chewing", "Scheming", "Pondering", "Fussing",
+    "Baking", "Beaming", "Booping", "Brewing", "Bunning", "Burrowing",
+    "Canoodling", "Cascading", "Channeling", "Churning", "Clauding",
+    "Cogitating", "Composing", "Computing", "Concocting", "Cooking",
+    "Crafting", "Creating", "Crunching", "Doodling", "Ebbing", "Fermenting",
+    "Finagling", "Flowing", "Fluttering", "Forging", "Forming", "Frolicking",
+    "Frosting", "Galloping", "Generating", "Grooving", "Gusting",
+    "Harmonizing", "Hashing", "Hatching", "Herding", "Honking", "Ideating",
+    "Imagining", "Incubating", "Inferring", "Infusing", "Ionizing",
+    "Julienning", "Kneading", "Leavening", "Levitating", "Marinating",
+    "Meandering", "Misting", "Moonwalking", "Moseying", "Mulling",
+    "Mustering", "Musing", "Nebulizing", "Nesting", "Noodling", "Nucleating",
+    "Orbiting", "Osmosing", "Percolating", "Perusing", "Pollinating",
+    "Pondering", "Pouncing", "Processing", "Proofing", "Propagating",
+    "Puttering", "Puzzling", "Roosting", "Ruminating", "Scampering",
+    "Schlepping", "Scurrying", "Seasoning", "Shimmying", "Simmering",
+    "Sketching", "Slithering", "Smooshing", "Spelunking", "Spinning",
+    "Sprouting", "Stewing", "Sublimating", "Swirling", "Swooping",
+    "Tempering", "Thinking", "Thundering", "Tinkering", "Transmuting",
+    "Twisting", "Undulating", "Unfurling", "Vibing", "Waddling", "Wandering",
+    "Warping", "Whirring", "Whisking", "Wibbling", "Working", "Wrangling",
+    "Zesting", "Zigzagging",
 )
 
 #: Settled states get one stable word each. Rotating these would suggest
 #: activity where there is none.
+#:
+#: The CLI's own per-row word for a quiet session is "Idle"; "Ready" is used
+#: here instead, taken from its "Ready for review" group header. Same register,
+#: and it keeps the requested distance from busy/idle.
 STABLE_WORDS = {
     SessionState.IDLE: "Ready",
-    SessionState.WAITING: "Needs you",
+    SessionState.WAITING: "Needs input",
     SessionState.SHELL: "In shell",
-    SessionState.ERROR: "Fell over",
+    SessionState.ERROR: "Failed",
     SessionState.UNKNOWN: "Unsure",
 }
 

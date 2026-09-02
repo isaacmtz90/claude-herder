@@ -25,6 +25,9 @@ ACTION_FOCUS = "Focus"
 ACTION_INTERRUPT = "Interrupt"
 ACTION_OUTPUT = "Open output"
 
+#: More rows than any observed dialog offers; a larger index means we misread.
+MAX_OPTIONS = 9
+
 
 class Router:
     """Maps pad keys to adapter calls, choosing the adapter per session."""
@@ -87,28 +90,45 @@ class Router:
 
     # --- public API -----------------------------------------------------------
     def perform(self, session: Session | None, index: int, label: str,
-                live: bool) -> str:
+                live: bool, current: int | None = None) -> str:
         """Act on the option the user landed the dial on.
 
         `live` distinguishes a real prompt the session is blocked on from our
-        own action menu. For a live prompt the position IS the answer: Claude
-        Code numbers the options from 1, so option `index` is the digit
-        `index + 1`, sent with no newline.
+        own action menu. `current` is where the dialog's own cursor sits.
         """
         if session is None:
             return "no session selected"
         if live:
-            return self._answer_prompt(session, index)
+            return self._answer_prompt(session, index, current)
         return self._menu_action(session, label)
 
-    def _answer_prompt(self, session: Session, index: int) -> str:
-        if not 0 <= index < 9:
+    def _answer_prompt(self, session: Session, index: int,
+                       current: int | None) -> str:
+        """Answer by moving the dialog's cursor, not by typing a number.
+
+        Typing the option number looks simpler and is wrong in general: a whole
+        family of dialogs renders with indexes hidden, where the digit is
+        silently ignored, and the rows a dialog offers vary with feature flags,
+        so a fixed position does not mean a fixed answer. Arrow keys and Enter
+        behave identically in every variant.
+        """
+        if not 0 <= index < MAX_OPTIONS:
             return f"option {index + 1} out of range"
         if not self._reachable(session):
             return VIEW_ONLY
+        if current is None:
+            # The pointer was not visible, so we do not know where the cursor
+            # is. Moving blindly could approve what the user meant to refuse.
+            return "cursor unknown; not guessing"
         if self.dry_run:
-            return f"dry run: answer {index + 1}"
-        return self._text(session, str(index + 1), submit=False)
+            return f"dry run: move {index - current:+d} and confirm"
+
+        distance = index - current
+        key = "down" if distance > 0 else "up"
+        for _ in range(abs(distance)):
+            if self._key(session, key).endswith("failed"):
+                return "navigation failed"
+        return "sent" if self._key(session, "enter") == "enter" else "confirm failed"
 
     def _menu_action(self, session: Session, label: str) -> str:
         if label == ACTION_OUTPUT:
