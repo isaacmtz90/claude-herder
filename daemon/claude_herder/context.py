@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable
 
+from .config import DEFAULT_ACTIONS, MONITOR_ACTIONS, MenuAction
 from .models import ConsoleKind, Session, SessionState
 from .protocol import context_frame
 
@@ -60,12 +61,6 @@ STABLE_WORDS = {
 MAX_SUMMARY = 42          # two 21-column rows
 MAX_OPTION = 19           # one row minus the cursor marker
 
-#: Offered when nothing is blocking; keeps the dial useful at all times.
-IDLE_ACTIONS = ("Focus", "Interrupt", "/compact", "/clear")
-#: A session with no window can only be looked at.
-MONITOR_ACTIONS = ("Open output",)
-
-
 def label_for(state: SessionState, seed: int = 0) -> str:
     """A human label for a state. Only 'working' varies, and only by seed."""
     if state is SessionState.BUSY:
@@ -88,10 +83,13 @@ def format_age(seconds: float | None) -> str:
     return f"{total // 86400}d"
 
 
-def _actions_for(session: Session) -> tuple[str, ...]:
+def _actions_for(session: Session,
+                 actions: tuple[MenuAction, ...] | None) -> tuple[str, ...]:
+    """Labels for the dial. A session with no window cannot be typed into, so
+    it is only ever offered the one action that does not require a terminal."""
     if not session.controllable:
-        return MONITOR_ACTIONS
-    return IDLE_ACTIONS
+        return tuple(a.label for a in MONITOR_ACTIONS)
+    return tuple(a.label for a in (actions if actions is not None else DEFAULT_ACTIONS))
 
 
 def build(
@@ -100,6 +98,7 @@ def build(
     summary_provider: Callable[[Session], str] | None = None,
     now_ms: int = 0,
     seed: int = 0,
+    actions: tuple[MenuAction, ...] | None = None,
 ) -> dict:
     """Assemble the detail frame for one session."""
     live_options: list[str] = []
@@ -120,7 +119,7 @@ def build(
         except Exception as exc:
             log.debug("no summary for %s: %s", session.label, exc)
 
-    options = live_options or list(_actions_for(session))
+    options = live_options or list(_actions_for(session, actions))
 
     age = ""
     if session.status_updated_at and now_ms:

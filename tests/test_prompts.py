@@ -210,3 +210,30 @@ class TestUnparseableShapes:
     def test_a_yes_no_accessibility_prompt_is_refused(self):
         pane = " y. Yes, I trust this folder\n n. No, exit\n Enter y/n:\n"
         assert prompts.parse_options(pane) == ()
+
+
+class TestLooksBlocked:
+    """A cheap "is any dialog on screen?" check.
+
+    Distinct from parse_options, which only understands numbered lists. A menu
+    action ends by pressing Enter, and if an unexpected dialog is up that Enter
+    answers it -- observed live: a workspace-trust prompt swallowed a /compact
+    and quit the session by confirming its highlighted "No, exit".
+    """
+
+    def test_a_numbered_permission_dialog_is_blocked(self):
+        assert prompts.looks_blocked(REAL_TWO_OPTION) is True
+
+    def test_an_unnumbered_trust_dialog_is_blocked(self):
+        # parse_options refuses this shape, but it is still a dialog.
+        assert prompts.parse_options(UNNUMBERED) == ()
+        assert prompts.looks_blocked(UNNUMBERED) is True
+
+    def test_a_plan_approval_is_blocked(self):
+        assert prompts.looks_blocked(PLAN) is True
+
+    def test_an_ordinary_pane_is_not_blocked(self):
+        assert prompts.looks_blocked(NO_DIALOG) is False
+
+    def test_empty_text_is_not_blocked(self):
+        assert prompts.looks_blocked("") is False

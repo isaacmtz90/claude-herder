@@ -12,18 +12,14 @@ import logging
 import time
 
 from .adapters import BgJobAdapter, GhosttyAdapter, ITerm2Adapter
-from .config import Config
+from . import prompts
+from .config import (BUILTIN_FOCUS, BUILTIN_INTERRUPT, BUILTIN_OUTPUT,
+                     MONITOR_ACTIONS, Config)
 from .models import ConsoleKind, Session
 
 log = logging.getLogger(__name__)
 
 VIEW_ONLY = "view only - no terminal"
-
-#: Menu labels the router knows how to act on. Anything else is typed as-is if
-#: it looks like a slash command, and refused otherwise.
-ACTION_FOCUS = "Focus"
-ACTION_INTERRUPT = "Interrupt"
-ACTION_OUTPUT = "Open output"
 
 #: More rows than any observed dialog offers; a larger index means we misread.
 MAX_OPTIONS = 9
@@ -40,6 +36,9 @@ class Router:
         self._ghostty: GhosttyAdapter | None = None
         #: Test seam: forces a single adapter for every session.
         self._override = None
+        #: How to read a session's visible text, so an action can check whether
+        #: a dialog is up before sending anything.
+        self.pane_reader = self._read_pane
 
     # --- adapter selection ----------------------------------------------------
     def adapter_for(self, session: Session):
@@ -131,21 +130,57 @@ class Router:
         return "sent" if self._key(session, "enter") == "enter" else "confirm failed"
 
     def _menu_action(self, session: Session, label: str) -> str:
-        if label == ACTION_OUTPUT:
+        """Run the chosen menu entry.
+
+        Slash commands are submitted by default. Typing one and leaving it on
+        the prompt looks like the pad did nothing, which is exactly how this
+        was reported; the dial's two presses -- one to reveal the choices, one
+        to commit -- are the confirmation.
+        """
+        action = self._action_for(label)
+        if action is None:
+            return f"no action for {label!r}"
+
+        if action.builtin == BUILTIN_OUTPUT:
             return ("opened output" if self._bg.open_output(session.job_id)
                     else "no output found")
         if not self._reachable(session):
             return VIEW_ONLY
-        if label == ACTION_FOCUS:
+        if action.builtin == BUILTIN_FOCUS:
+            # Raising a window sends no input, so it is safe -- and it is
+            # exactly what you want when something unexpected is asking.
             if self.dry_run:
                 return "dry run: focus"
             return "focused" if self.adapter_for(session).focus(session.tty) else "focus failed"
-        if label == ACTION_INTERRUPT:
+
+        # Everything below types or presses Enter, which a dialog would eat.
+        if self._dialog_is_up(session):
+            log.warning("refusing %r: a dialog is on screen", label)
+            return "dialog on screen"
+        if action.builtin == BUILTIN_INTERRUPT:
             return self._key(session, "escape")
-        if label.startswith("/"):
-            # Typed but not submitted: /clear and friends deserve a human Enter.
-            return self._text(session, label, submit=False)
+        if action.text:
+            return self._text(session, action.text, submit=action.submit)
         return f"no action for {label!r}"
+
+    def _read_pane(self, tty: str) -> str:
+        return self._iterm.pane_text(tty)
+
+    def _dialog_is_up(self, session: Session) -> bool:
+        """Whether something on screen is waiting for an answer."""
+        if session.terminal != "iterm2" or not session.tty:
+            return False
+        try:
+            return prompts.looks_blocked(self.pane_reader(session.tty))
+        except Exception as exc:
+            log.debug("cannot check for a dialog: %s", exc)
+            return False
+
+    def _action_for(self, label: str):
+        for action in tuple(self.config.actions) + tuple(MONITOR_ACTIONS):
+            if action.label == label:
+                return action
+        return None
 
     def focus(self, session: Session | None) -> bool:
         """Raise the session's terminal window, if it has one."""

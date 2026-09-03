@@ -34,7 +34,20 @@ The screen, 21 columns by 5 rows:
 
 When nothing is blocking, those two middle rows show what the session last
 said instead, and the dial offers **Focus / Interrupt / /compact / /clear**
-(or just **Open output** for a background job that has no window).
+(or just **Open output** for a background job that has no window). The menu is
+configurable — see `config.example.toml`.
+
+Picking a command **runs** it: the text is typed and Enter follows. The dial
+already asks twice (one press to reveal the choices, one to commit), and that
+is the confirmation. Set `submit = false` on an action to have it typed and
+left for you instead.
+
+Actions that type or press Enter first check that no dialog is on screen, and
+refuse if one is. An Enter delivered into an open dialog answers *that dialog* —
+observed live, where a workspace-trust prompt swallowed a `/compact` and quit
+the session by confirming its highlighted "No, exit". **Focus** is exempt: it
+sends no input, and raising the window is exactly what you want when something
+unexpected is asking.
 
 ## LED states
 

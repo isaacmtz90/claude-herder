@@ -148,3 +148,26 @@ def highlighted_index(text: str) -> int | None:
 def is_partial(text: str) -> bool:
     """True when the list is scrolled, so the visible rows are not all of them."""
     return any(scroll for _label, _hot, scroll in _collect(text))
+
+
+def looks_blocked(text: str) -> bool:
+    """True when ANY dialog appears to be on screen.
+
+    Broader than `parse_options`, which only understands numbered lists. A menu
+    action finishes by pressing Enter, and an Enter delivered while an
+    unexpected dialog is up answers that dialog instead -- observed live, where
+    a workspace-trust prompt swallowed a /compact and confirmed its highlighted
+    "No, exit". So actions check this first and refuse.
+    """
+    if not text:
+        return False
+    lines = text.splitlines()
+    if _header_line(lines) is None:
+        return False
+    # An anchor alone is not enough; require a row that looks selectable, so a
+    # header quoted in ordinary output does not read as a live dialog.
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped[:1] in POINTERS and len(stripped) > 1:
+            return True
+    return False

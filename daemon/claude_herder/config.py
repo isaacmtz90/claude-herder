@@ -1,7 +1,7 @@
 """User configuration, kept out of the code.
 
-Everything version-coupled lives here: the permission menu digits, the canned
-key bindings. When Claude Code changes its prompt UI, this is the only file
+Everything version-coupled lives here: the permission answers and the dial's
+action menu. When Claude Code changes its prompt UI, this is the only file
 that should need touching.
 """
 
@@ -22,14 +22,37 @@ DEFAULT_PATH = Path(
 
 
 @dataclass(frozen=True, slots=True)
-class CannedKey:
-    """One configurable action key."""
+class MenuAction:
+    """One entry on the dial's action menu.
+
+    Either a `builtin` (focus / interrupt / output) or literal `text` typed into
+    the session. `submit` presses Enter afterwards -- which is what makes a
+    slash command actually run rather than just appear on the prompt.
+    """
 
     label: str
-    text: str
-    #: Whether to press Enter afterwards. Typing without submitting is often
-    #: safer, and the right answer differs per key, so it is not a global.
-    submit: bool = False
+    text: str | None = None
+    builtin: str | None = None
+    #: Default True: picking a command from a menu means running it. The dial
+    #: already requires two presses (one to reveal the choices, one to commit),
+    #: so that gesture is the confirmation.
+    submit: bool = True
+
+
+BUILTIN_FOCUS = "focus"
+BUILTIN_INTERRUPT = "interrupt"
+BUILTIN_OUTPUT = "output"
+
+#: Offered when nothing is blocking; keeps the dial useful at all times.
+DEFAULT_ACTIONS = (
+    MenuAction("Focus", builtin=BUILTIN_FOCUS),
+    MenuAction("Interrupt", builtin=BUILTIN_INTERRUPT),
+    MenuAction("/compact", text="/compact"),
+    MenuAction("/clear", text="/clear"),
+)
+
+#: A session with no window can only be looked at.
+MONITOR_ACTIONS = (MenuAction("Open output", builtin=BUILTIN_OUTPUT),)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,11 +70,7 @@ class Config:
     #: Verified against this CLI version; recorded so a mismatch is diagnosable.
     verified_against: str = "unverified"
 
-    canned: tuple[CannedKey, ...] = (
-        CannedKey("plan mode", "\x1b[Z", submit=False),   # Shift-Tab
-        CannedKey("compact", "/compact", submit=True),
-        CannedKey("clear", "/clear", submit=False),       # destructive: confirm by hand
-    )
+    actions: tuple[MenuAction, ...] = DEFAULT_ACTIONS
 
     #: Tapping a session key also raises its terminal window, so the pad and
     #: the screen agree on what you are looking at.
@@ -81,19 +100,25 @@ def load(path: Path | None = None) -> Config:
         log.warning("ignoring unreadable config %s: %s", path, exc)
         return Config()
 
-    canned = _DEFAULTS.canned
-    if isinstance(raw.get("canned"), list):
+    actions = _DEFAULTS.actions
+    # "canned" is the old table name; still accepted so existing configs work.
+    entries = raw.get("action") or raw.get("canned")
+    if isinstance(entries, list):
         parsed = []
-        for entry in raw["canned"][:3]:
-            if not isinstance(entry, dict) or "text" not in entry:
+        for entry in entries:
+            if not isinstance(entry, dict):
                 continue
-            parsed.append(CannedKey(
-                label=str(entry.get("label", "key")),
-                text=str(entry["text"]),
-                submit=bool(entry.get("submit", False)),
+            label = entry.get("label") or entry.get("text")
+            if not label:
+                continue
+            parsed.append(MenuAction(
+                label=str(label),
+                text=str(entry["text"]) if entry.get("text") else None,
+                builtin=str(entry["builtin"]) if entry.get("builtin") else None,
+                submit=bool(entry.get("submit", True)),
             ))
         if parsed:
-            canned = tuple(parsed)
+            actions = tuple(parsed)
 
     permissions = raw.get("permissions") or {}
     timing = raw.get("timing") or {}
@@ -103,7 +128,7 @@ def load(path: Path | None = None) -> Config:
         deny_key=str(permissions.get("deny", _DEFAULTS.deny_key)),
         verified_against=str(
             permissions.get("verified_against", _DEFAULTS.verified_against)),
-        canned=canned,
+        actions=actions,
         focus_on_tap=bool(behaviour.get("focus_on_tap", _DEFAULTS.focus_on_tap)),
         poll_interval=float(timing.get("poll_interval", _DEFAULTS.poll_interval)),
         heartbeat_interval=float(

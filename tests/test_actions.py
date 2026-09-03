@@ -1,7 +1,7 @@
 """Key -> action dispatch. The safety-critical part of the daemon."""
 import pytest
 from claude_herder.actions import Router
-from claude_herder.config import CannedKey, Config
+from claude_herder.config import Config
 from claude_herder.models import ConsoleKind, SessionState
 
 
@@ -98,12 +98,8 @@ class TestPickingAMenuAction:
                                 index=1, label="Interrupt", live=False)
         assert adapter.keys == [("/dev/ttys1", "escape")]
 
-    def test_a_slash_command_is_typed_but_not_submitted(self, router, make_session):
-        adapter = FakeAdapter()
-        router(adapter).perform(make_session(1, tty="/dev/ttys1"),
-                                index=2, label="/compact", live=False)
-        assert adapter.texts == [("/dev/ttys1", "/compact", False)]
-        assert adapter.keys == [], "destructive-ish commands wait for a human Enter"
+    # Slash-command submission is covered in tests/test_menu_actions.py, which
+    # asserts the corrected behaviour: picking one runs it.
 
     def test_open_output_needs_no_terminal(self, router, make_session):
         from claude_herder.models import ConsoleKind

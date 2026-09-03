@@ -5,7 +5,7 @@ from claude_herder import config as C
 def test_missing_file_yields_usable_defaults(tmp_path):
     cfg = C.load(tmp_path / "absent.toml")
     assert cfg.approve_key == "1"
-    assert len(cfg.canned) == 3
+    assert len(cfg.actions) == 4
 
 
 def test_deny_defaults_to_escape_not_a_digit(tmp_path):
@@ -37,29 +37,6 @@ def test_permission_digits_are_overridable(tmp_path):
     assert (cfg.approve_key, cfg.deny_key) == ("y", "n")
 
 
-def test_canned_keys_are_read_in_order(tmp_path):
-    path = tmp_path / "c.toml"
-    path.write_text(
-        '[[canned]]\nlabel="a"\ntext="/one"\nsubmit=true\n'
-        '[[canned]]\nlabel="b"\ntext="/two"\n')
-    cfg = C.load(path)
-    assert [c.text for c in cfg.canned] == ["/one", "/two"]
-    assert (cfg.canned[0].submit, cfg.canned[1].submit) == (True, False)
-
-
-def test_more_than_three_canned_keys_are_truncated(tmp_path):
-    path = tmp_path / "c.toml"
-    path.write_text("".join(
-        f'[[canned]]\nlabel="k{i}"\ntext="/{i}"\n' for i in range(6)))
-    assert len(C.load(path).canned) == 3
-
-
-def test_canned_entries_without_text_are_skipped(tmp_path):
-    path = tmp_path / "c.toml"
-    path.write_text('[[canned]]\nlabel="broken"\n[[canned]]\nlabel="ok"\ntext="/x"\n')
-    assert [c.text for c in C.load(path).canned] == ["/x"]
-
-
 def test_timing_overrides_apply(tmp_path):
     path = tmp_path / "c.toml"
     path.write_text("[timing]\nsubmit_delay = 0.25\npoll_interval = 2.0\n")
@@ -71,9 +48,12 @@ def test_the_shipped_example_config_is_valid():
     from pathlib import Path
     example = Path(__file__).resolve().parents[1] / "config.example.toml"
     cfg = C.load(example)
-    assert cfg.verified_against and len(cfg.canned) == 3
-    # The plan-mode key must carry a real escape sequence, not the literal text.
-    assert "\x1b" in cfg.canned[0].text
+    assert cfg.verified_against and cfg.actions
+    # Slash commands in the shipped menu must submit, or a picked command just
+    # sits on the prompt doing nothing.
+    for action in cfg.actions:
+        if action.text and action.text.startswith("/"):
+            assert action.submit is True, action.label
 
 
 def test_config_is_immutable():

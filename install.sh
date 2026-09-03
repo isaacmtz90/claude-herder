@@ -50,11 +50,21 @@ mkdir -p "$HERDER_HOME"
 "$VENV/bin/pip" install --quiet "$REPO"
 
 # --- 3. config ----------------------------------------------------------------
-if [[ -f "$HERDER_HOME/config.toml" ]]; then
-  info "keeping your existing config.toml"
-else
+if [[ ! -f "$HERDER_HOME/config.toml" ]]; then
   info "writing default config to $HERDER_HOME/config.toml"
   cp "$REPO/config.example.toml" "$HERDER_HOME/config.toml"
+elif grep -q '^\[\[canned\]\]' "$HERDER_HOME/config.toml"; then
+  # The old [[canned]] table predates the dial. Left alone it would replace the
+  # whole action menu with three text entries -- losing Focus and Interrupt --
+  # and keep slash commands unsubmitted, which is the "typed but never ran"
+  # behaviour. Migrate, keeping a backup of whatever was there.
+  BACKUP="$HERDER_HOME/config.toml.bak-$(date +%Y%m%d-%H%M%S)"
+  cp "$HERDER_HOME/config.toml" "$BACKUP"
+  cp "$REPO/config.example.toml" "$HERDER_HOME/config.toml"
+  warn "migrated config.toml to the new [[action]] menu format"
+  warn "your previous file is at $BACKUP"
+else
+  info "keeping your existing config.toml"
 fi
 
 # --- 4. firmware --------------------------------------------------------------

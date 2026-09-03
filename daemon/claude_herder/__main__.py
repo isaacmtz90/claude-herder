@@ -114,6 +114,7 @@ class Herder:
             # Stable while a session stays in one state, so the word does not
             # flicker; different per session and per episode, so it varies.
             seed=abs(hash(session.session_id)) + session.status_updated_at // 1000,
+            actions=self.config.actions,
         )
         if frame != self.last_context:
             options_changed = frame.get("o") != (self.last_context or {}).get("o")
