@@ -77,7 +77,7 @@ if pad_attached; then
   else
     warn "CIRCUITPY is not mounted, so existing firmware cannot be backed up"
     warn "automatically. If this pad runs a keymap you care about, stop now"
-    warn "and save it first (see README: reading firmware over the REPL)."
+    warn "and save it first: mount CIRCUITPY and copy its .py files somewhere safe."
   fi
   info "flashing herder firmware"
   "$VENV/bin/python" "$REPO/firmware/flash.py" --source "$REPO/firmware"

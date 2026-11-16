@@ -24,8 +24,9 @@ If the user asked to start or stop it:
 - start: `launchctl kickstart -k gui/$(id -u)/io.claudeherder.daemon`
 - stop:  `launchctl bootout gui/$(id -u)/io.claudeherder.daemon`
 
-Explain what each slot means: keys 0-5 are sessions (red blink = waiting on you,
-amber breathe = thinking, green = idle, dim = view-only background job), keys 6-8
-are approve / deny / interrupt, keys 9-11 are the configured canned keys, and the
-encoder scrolls options with press to select. A slow purple pulse across all keys
-means the daemon is not talking to the pad.
+Explain what each slot means: all twelve keys (0-11) are sessions (red blink =
+waiting on you, amber breathe = working, green = idle, blue = in a shell, dim =
+view-only background job). There is no action row: tapping a key selects that
+session, and the encoder scrolls its choices or the configured action menu, with
+press to select. A slow purple pulse across all keys means the daemon is not
+talking to the pad.
